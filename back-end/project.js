@@ -1276,7 +1276,7 @@ function Airshippushnotifications() {
 
 setInterval(Airshippushnotifications, 60000);
 
-app.get("/pushNotificationsSend", (req, res) => {
+app.post("/pushNotificationsSend", (req, res) => {
 	// console.log("req pushNotificationsSend", req.body);
 	// {
 	//         "audience": {
