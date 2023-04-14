@@ -39,7 +39,7 @@ const aeUserSchema = new Schema({
 	notifyme: Boolean,
 	dob: Date,
 	bio1: String,
-	bio2: String,
+	channelid: String,
 	verification: [verificationSchema],
 	payment: String,
 	plan: String,

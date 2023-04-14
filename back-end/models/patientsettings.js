@@ -4,7 +4,10 @@ const Schema = mongoose.Schema;
 const consultationSchema = new Schema({
 	receiveNew: Boolean,
 	receiveCancel: Boolean,
-	receiveNotification: Boolean,
+	receiveNotification1hr: Boolean,
+	receiveNotification2hr: Boolean,
+	receiveNotification15min: Boolean,
+	receiveNotification24hr: Boolean,
 	status: Boolean,
 });
 
@@ -12,6 +15,8 @@ const treatmentSchema = new Schema({
 	receiveNew: Boolean,
 	receiveCancel: Boolean,
 	receiveNotification1hr: Boolean,
+	receiveNotification2hr: Boolean,
+	receiveNotification15min: Boolean,
 	receiveNotification24hr: Boolean,
 	status: Boolean,
 });

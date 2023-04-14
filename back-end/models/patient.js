@@ -19,6 +19,7 @@ const PatientSchema = new Schema({
 	sumsubstatus: String,
 	avatar: String,
 	email: String,
+	channelid: String,
 	phone: String,
 	allergies: String,
 	scannedimages: String,

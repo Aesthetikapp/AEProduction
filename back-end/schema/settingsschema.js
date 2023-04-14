@@ -76,6 +76,7 @@ const appointment = new GraphQLObjectType({
 	name: "appointment",
 	fields: {
 		radius: { type: GraphQLString },
+		dayrate: { type: GraphQLString },
 		interval: { type: GraphQLString },
 		autoacceptbooking: { type: GraphQLBoolean },
 		autoacceptconsult: { type: GraphQLBoolean },
@@ -88,6 +89,7 @@ const inputappointment = new GraphQLInputObjectType({
 	name: "inputappointment",
 	fields: {
 		radius: { type: GraphQLString },
+		dayrate: { type: GraphQLString },
 		interval: { type: GraphQLString },
 		autoacceptbooking: { type: GraphQLBoolean },
 		autoacceptconsult: { type: GraphQLBoolean },
@@ -272,6 +274,9 @@ const mutationType = new GraphQLObjectType({
 							doc["appointment"][0]["radius"] = JSON.parse(args.obj)[
 								"appointment"
 							][0]["radius"];
+							doc["appointment"][0]["dayrate"] = JSON.parse(args.obj)[
+								"appointment"
+							][0]["dayrate"];
 							doc["appointment"][0]["interval"] = JSON.parse(args.obj)[
 								"appointment"
 							][0]["interval"];

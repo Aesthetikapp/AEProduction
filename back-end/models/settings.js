@@ -25,6 +25,7 @@ const calendarSchema = new Schema({
 
 const appointmentSchema = new Schema({
 	radius: String,
+	dayrate: String,
 	interval: String,
 	autoacceptbooking: Boolean,
 	autoacceptconsult: Boolean,

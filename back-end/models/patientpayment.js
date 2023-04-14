@@ -5,7 +5,7 @@ const patientpaymentSchema = new Schema({
 	appointmentid: String,
 	date: String,
 	amount: String,
-	kind: String,
+	kind: String, 
 	month: String,
 	year: String,
 	tax: String,

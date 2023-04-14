@@ -21,7 +21,10 @@ const consultation = new GraphQLObjectType({
 	fields: {
 		receiveNew: { type: GraphQLBoolean },
 		receiveCancel: { type: GraphQLBoolean },
-		receiveNotification: { type: GraphQLBoolean },
+		receiveNotification1hr: { type: GraphQLBoolean },
+		receiveNotification2hr: { type: GraphQLBoolean },
+		receiveNotification15min: { type: GraphQLBoolean },
+		receiveNotification24hr: { type: GraphQLBoolean },
 		status: { type: GraphQLBoolean },
 	},
 });
@@ -31,7 +34,10 @@ const inputconsultation = new GraphQLInputObjectType({
 	fields: {
 		receiveNew: { type: GraphQLBoolean },
 		receiveCancel: { type: GraphQLBoolean },
-		receiveNotification: { type: GraphQLBoolean },
+		receiveNotification1hr: { type: GraphQLBoolean },
+		receiveNotification2hr: { type: GraphQLBoolean },
+		receiveNotification15min: { type: GraphQLBoolean },
+		receiveNotification24hr: { type: GraphQLBoolean },
 		status: { type: GraphQLBoolean },
 	},
 });
@@ -42,6 +48,8 @@ const treatment = new GraphQLObjectType({
 		receiveNew: { type: GraphQLBoolean },
 		receiveCancel: { type: GraphQLBoolean },
 		receiveNotification1hr: { type: GraphQLBoolean },
+		receiveNotification2hr: { type: GraphQLBoolean },
+		receiveNotification15min: { type: GraphQLBoolean },
 		receiveNotification24hr: { type: GraphQLBoolean },
 		status: { type: GraphQLBoolean },
 	},
@@ -53,6 +61,8 @@ const inputtreatment = new GraphQLInputObjectType({
 		receiveNew: { type: GraphQLBoolean },
 		receiveCancel: { type: GraphQLBoolean },
 		receiveNotification1hr: { type: GraphQLBoolean },
+		receiveNotification2hr: { type: GraphQLBoolean },
+		receiveNotification15min: { type: GraphQLBoolean },
 		receiveNotification24hr: { type: GraphQLBoolean },
 		status: { type: GraphQLBoolean },
 	},
@@ -147,9 +157,18 @@ const mutationType = new GraphQLObjectType({
 							doc["consultation"][0]["receiveCancel"] = JSON.parse(args.obj)[
 								"consultation"
 							][0]["receiveCancel"];
-							doc["consultation"][0]["receiveNotification"] = JSON.parse(
+							doc["consultation"][0]["receiveNotification1hr"] = JSON.parse(
 								args.obj
-							)["consultation"][0]["receiveNotification"];
+							)["consultation"][0]["receiveNotification1hr"];
+							doc["consultation"][0]["receiveNotification2hr"] = JSON.parse(
+								args.obj
+							)["consultation"][0]["receiveNotification2hr"];
+							doc["consultation"][0]["receiveNotification15min"] = JSON.parse(
+								args.obj
+							)["consultation"][0]["receiveNotification15min"];
+							doc["consultation"][0]["receiveNotification24hr"] = JSON.parse(
+								args.obj
+							)["consultation"][0]["receiveNotification24hr"];
 							doc["consultation"][0]["status"] = JSON.parse(args.obj)[
 								"consultation"
 							][0]["status"];
@@ -161,12 +180,18 @@ const mutationType = new GraphQLObjectType({
 							doc["treatment"][0]["receiveCancel"] = JSON.parse(args.obj)[
 								"treatment"
 							][0]["receiveCancel"];
-							doc["treatment"][0]["receiveNotification1hr"] = JSON.parse(
+							doc["consultation"][0]["receiveNotification1hr"] = JSON.parse(
 								args.obj
-							)["treatment"][0]["receiveNotification1hr"];
-							doc["treatment"][0]["receiveNotification24hr"] = JSON.parse(
+							)["consultation"][0]["receiveNotification1hr"];
+							doc["consultation"][0]["receiveNotification2hr"] = JSON.parse(
 								args.obj
-							)["treatment"][0]["receiveNotification24hr"];
+							)["consultation"][0]["receiveNotification2hr"];
+							doc["consultation"][0]["receiveNotification15min"] = JSON.parse(
+								args.obj
+							)["consultation"][0]["receiveNotification15min"];
+							doc["consultation"][0]["receiveNotification24hr"] = JSON.parse(
+								args.obj
+							)["consultation"][0]["receiveNotification24hr"];
 							doc["treatment"][0]["status"] = JSON.parse(args.obj)[
 								"treatment"
 							][0]["status"];
