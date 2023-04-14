@@ -7,11 +7,14 @@ const UserModel = require("./models/aeuser");
 const settings = require("./models/settings");
 const appointmentschema = require("./schema/appointmentschema");
 const patientschema = require("./schema/patientschema");
+const questionschema = require("./schema/questionschema");
+const patienthistoryschema = require("./schema/patienthistoryschema");
 const settingsschema = require("./schema/settingsschema");
 const patientsettingsschema = require("./schema/patientsettingsschema");
 const subscriptionschema = require("./schema/subscriptionschema");
 const allergiesschema = require("./schema/allergiesschema");
 const notificationschema = require("./schema/notificationschema");
+const appnotificationschema = require("./schema/appnotificationschema");
 const patientpaymentschema = require("./schema/patientpaymentschema");
 const patientpaymentdetailsschema = require("./schema/patientpaymentdetailsschema");
 const bodymasterschema = require("./schema/bodymasterschema");
@@ -22,9 +25,11 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const dotenv = require("dotenv");
 const AWS = require("aws-sdk");
+const moment = require("moment");
 const appointment = require("./models/appointment");
 const patient = require("./models/patient");
-// const treatment = require("./models/treatments");
+const patientsettings = require("./models/patientsettings");
+const appnotification = require("./models/appnotification");
 const email = require("./email");
 const crypto = require("crypto");
 const FormData = require("form-data");
@@ -36,8 +41,10 @@ const {
 	AccessToken,
 } = require("agora-access-token"); // By Naresh
 const { ServiceChat, AccessToken2 } = require("./agorachat/AccessToken2.js");
+var base64 = require("base-64");
 dotenv.config();
-
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const session = require("express-session");
 var app = Express();
 var cors = require("cors");
 
@@ -46,6 +53,7 @@ app.use(Express.static("files"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(fileupload());
+const { resolve } = require("path");
 
 const APP_ID = process.env.APP_ID;
 const APP_CERTIFICATE = process.env.APP_CERTIFICATE;
@@ -151,6 +159,16 @@ app.use("/aeuser", ExpressGraphQL({ schema: userschema, graphiql: true }));
 app.use("/patient", ExpressGraphQL({ schema: patientschema, graphiql: true }));
 
 app.use(
+	"/patienthistory",
+	ExpressGraphQL({ schema: patienthistoryschema, graphiql: true })
+);
+
+app.use(
+	"/question",
+	ExpressGraphQL({ schema: questionschema, graphiql: true })
+);
+
+app.use(
 	"/patientpayment",
 	ExpressGraphQL({ schema: patientpaymentschema, graphiql: true })
 );
@@ -163,6 +181,11 @@ app.use(
 app.use(
 	"/notification",
 	ExpressGraphQL({ schema: notificationschema, graphiql: true })
+);
+
+app.use(
+	"/appnotification",
+	ExpressGraphQL({ schema: appnotificationschema, graphiql: true })
 );
 
 app.use(
@@ -190,10 +213,10 @@ app.use(
 	ExpressGraphQL({ schema: allergiesschema, graphiql: true })
 );
 
-app.use(
-	"/notification",
-	ExpressGraphQL({ schema: notificationschema, graphiql: true })
-);
+// app.use(
+// 	"/notification",
+// 	ExpressGraphQL({ schema: notificationschema, graphiql: true })
+// );
 
 app.use(
 	"/bodymaster",
@@ -209,6 +232,89 @@ app.use(
 	"/treatmenttype",
 	ExpressGraphQL({ schema: treatmenttypeschema, graphiql: true })
 );
+
+app.use(
+	session({
+		secret: "jhsdfkjhhdsjkusdfuyehcbgaqoap",
+		resave: false,
+		saveUninitialized: true,
+	})
+);
+
+// app.get("/", (req, res) => {
+// 	const path = resolve(`${req.headers.origin}/payment`);
+// 	res.sendFile(path);
+// });
+
+app.post("/onboard-user", async (req, res) => {
+	// console.log("req", req.body.state);
+	console.log("req session", req.session);
+	try {
+		const account = await stripe.accounts.create({
+			type: "standard",
+		});
+		// Store the ID of the new Standard connected account.
+		req.session.accountID = account.id;
+
+		UserModel.updateOne(
+			{ _id: req.body.state.id },
+			{ $set: { payment: account.id + "|pending" } },
+			function (err, result) {
+				if (err) {
+					console.log(err);
+				} else {
+					// console.log(result);
+				}
+			}
+		);
+		const origin = `${req.headers.origin}`;
+		const accountLink = await stripe.accountLinks.create({
+			type: "account_onboarding",
+			account: account.id,
+			refresh_url: `${origin}/onboard-user/refresh?accountid=${account.id}&id=${req.body.state.id}`,
+			return_url: `${origin}/paymentdone?id=${req.body.state.id}`,
+		});
+		// console.log("account", account);
+		// console.log("accountLink.url", accountLink.url);
+		res.send(accountLink.url);
+		// res.redirect(303, accountLink.url);
+	} catch (err) {
+		res.status(500).send({
+			error: err.message,
+		});
+	}
+});
+
+app.post("/onboard-user/refresh", async (req, res) => {
+	console.log("body", req.body);
+	console.log("req session refresh", req.session);
+	if (!req.body.accountId) {
+		// res.redirect("/payment");
+		res.send("/payment");
+		return;
+	}
+	try {
+		// const { accountID } = req.body.accountId;
+		// const origin = `${req.secure ? "https://" : "http://"}${req.headers.host}`;
+		const origin = `${req.headers.origin}`;
+		console.log("origin", origin);
+
+		const accountLink = await stripe.accountLinks.create({
+			type: "account_onboarding",
+			account: req.body.accountId,
+			refresh_url: `${origin}/onboard-user/refresh?accountid=${req.body.accountId}&id=${req.body.id}`,
+			return_url: `${origin}/paymentdone?id=${req.body.id}`,
+		});
+
+		console.log("accountLink.url", accountLink);
+		res.send(accountLink.url);
+		// res.redirect(303, accountLink.url);
+	} catch (err) {
+		res.status(500).send({
+			error: err.message,
+		});
+	}
+});
 
 app.post("/startRecording", (req, res) => {
 	const appId = process.env.APP_ID;
@@ -389,6 +495,14 @@ app.post("/sumsubstatuspost", (req, res) => {
 				} else {
 					// console.log(result);
 					email.sendEmail({ type: "accepted", user: result });
+					let patientData = returnNotificationData(
+						result.channelid.split("|"),
+						"ID verification",
+						"All checks complete and approved",
+						"patient",
+						"KYC"
+					);
+					SendNotification(patientData);
 				}
 			});
 		}
@@ -413,6 +527,14 @@ app.post("/sumsubstatuspost", (req, res) => {
 				} else {
 					// console.log(result);
 					email.sendEmail({ type: "error", user: result });
+					let patientData = returnNotificationData(
+						result.channelid.split("|"),
+						"ID verification",
+						"Something is not right, please try again ",
+						"patient",
+						"KYC"
+					);
+					SendNotification(patientData);
 				}
 			});
 		}
@@ -440,6 +562,16 @@ app.post("/sumsubstatuspost", (req, res) => {
 					} else {
 						// console.log(result);
 						email.sendEmail({ type: "accepted", user: result });
+						if (result.channelid !== "") {
+							let data = returnNotificationData(
+								result.channelid.split("|"),
+								"ID verification",
+								"All checks complete and approved",
+								"doctor",
+								"KYC"
+							);
+							SendNotification(data);
+						}
 					}
 				}
 			);
@@ -467,12 +599,786 @@ app.post("/sumsubstatuspost", (req, res) => {
 					} else {
 						// console.log(result);
 						email.sendEmail({ type: "error", user: result });
+						if (result.channelid !== "") {
+							let data = returnNotificationData(
+								result.channelid.split("|"),
+								"ID verification",
+								"Something is not right, please try again ",
+								"doctor",
+								"KYC"
+							);
+							SendNotification(data);
+						}
 					}
 				}
 			);
 		}
 	}
 });
+
+app.post("/pushNotificationsUpdate", (req, res) => {
+	// console.log("Airship channel update", req.body);
+
+	var updatedChannelid = "";
+	if (req.body.role === "patient") {
+		patient.findOne({ _id: req.body.id }, function (err, result) {
+			if (err) {
+				console.log(err);
+			} else {
+				if (result.channelid.includes(req.body.oldChannelId)) {
+					updatedChannelid = result.channelid.replace(
+						req.body.oldChannelId,
+						req.body.channelId
+					);
+				} else {
+					updatedChannelid =
+						result.channelid +
+						(result.channelid === "" ? "" : "|") +
+						req.body.channelId;
+				}
+				// console.log("updatedChannelid", updatedChannelid);
+				// email.sendEmail({ type: "accepted", user: result });
+				patient.updateOne(
+					{ _id: req.body.id },
+					{ $set: { channelid: updatedChannelid } },
+					function (err, result) {
+						if (err) {
+							console.log(err);
+						} else {
+							res.send(result);
+							// console.log(result);
+						}
+					}
+				);
+			}
+		});
+	} else {
+		UserModel.findOne({ _id: req.body.id }, function (err, result) {
+			if (err) {
+				console.log(err);
+			} else {
+				// console.log("result", result.channelid);
+
+				if (result.channelid.includes(req.body.oldChannelId)) {
+					updatedChannelid = result.channelid.replace(
+						req.body.oldChannelId,
+						req.body.channelId
+					);
+				} else {
+					updatedChannelid =
+						result.channelid +
+						(result.channelid === "" ? "" : "|") +
+						req.body.channelId;
+				}
+				// console.log("updatedChannelid", updatedChannelid);
+				// email.sendEmail({ type: "accepted", user: result });
+				UserModel.updateOne(
+					{ _id: req.body.id },
+					{ $set: { channelid: updatedChannelid } },
+					function (err, result) {
+						if (err) {
+							console.log(err);
+						} else {
+							res.send(result);
+							// console.log(result);
+						}
+					}
+				);
+			}
+		});
+	}
+});
+
+const returnNotificationData = (
+	channelid,
+	alertvalue,
+	titlevalue,
+	rolevalue,
+	viewscreen
+) => {
+	// console.log("channel", channelid);
+	// console.log("alert", alertvalue);
+	// console.log("title", titlevalue);
+	// console.log("role", rolevalue);
+
+	const deeplinkContent = {
+		screen: "AppointmentScreen",
+		appointmentId: viewscreen,
+		navigateTo: "AppointmentDetails",
+	};
+
+	var returnstring = {
+		senddata: {
+			audience: {
+				android_channel: channelid,
+			},
+			notification: {
+				alert: alertvalue,
+				android: {
+					title: titlevalue,
+				},
+				actions: {
+					open: {
+						type: "deep_link",
+						content: JSON.stringify(deeplinkContent),
+						fallback_url: `doctorapp://aesthetik.app/appointment_screen/${viewscreen}`,
+					},
+				},
+			},
+			device_types: ["android"],
+		},
+		role: rolevalue,
+	};
+
+	return returnstring;
+};
+
+function Airshippushnotifications() {
+	// var currentTime = moment().format("HH:mm");
+
+	var currentdate = moment().format("YYYY-MM-DD") + "T00:00:00.000+00:00";
+	var nextdate =
+		moment().add(1, "days").format("YYYY-MM-DD") + "T00:00:00.000+00:00";
+	// console.log("currentdate", currentdate, nextdate);
+	// var currentdate = "2023-03-13";
+
+	var currentTime = moment();
+	// console.log("currentTime", moment().format("HH:mm"));
+	// var endTime = moment("12:40", "HH:mm");
+
+	// endTime.diff(startTime, "hours");
+	// console.log(
+	// 	'endTime.diff(startTime, "hours");',
+	// 	endTime.diff(startTime, "minutes")
+	// );
+
+	appointment.aggregate(
+		[
+			{
+				$match: {
+					$or: [
+						{ appointmentdate: new Date(currentdate) },
+						{ appointmentdate: new Date(nextdate) },
+						{ consultationdate: new Date(currentdate) },
+					],
+					// isnotificationenable: true,
+				},
+			},
+			{
+				$lookup: {
+					from: "user_settings",
+					localField: "doctorid",
+					foreignField: "userid",
+					as: "settings",
+				},
+			},
+			{ $addFields: { doctorid: { $toObjectId: "$doctorid" } } },
+			{
+				$lookup: {
+					from: "aesthetik_users", // collection to join
+					localField: "doctorid", //field from the input documents
+					foreignField: "_id", //field from the documents of the "from" collection
+					as: "doctor_details", // output array field
+				},
+			},
+			{ $addFields: { patientid: { $toObjectId: "$patientid" } } },
+			{
+				$lookup: {
+					from: "patient_users",
+					localField: "patientid",
+					foreignField: "_id",
+					as: "patient_details",
+				},
+			},
+		],
+		function (err, result) {
+			// console.log(
+			// 	"result of appt",
+			// 	values.settings[0].notification[0].e_apt_activity,
+			// 	values.settings[0].notification[0].e_conslt_request
+			// );
+			// console.log("result", result.length);
+			if (result !== undefined && result.length !== 0) {
+				result.forEach((values) => {
+					// console.log(
+					// 	"enter",
+					// 	values.patient_details[0].channelid.replaceAll("|", ",")
+					// );
+					// console.log("result of appt", values.id);
+					var appointmenttime = moment(values.starttime, "HH:mm");
+					var consultationtime = moment(values.cstarttime, "HH:mm");
+					// console.log("appointmenttime", appointmenttime);
+					// console.log(
+					// 	"time",
+					// 	appointmenttime.diff(currentTime, "minutes"),
+					// 	consultationtime.diff(currentTime, "minutes")
+					// 	// moment.duration((values.starttime).diff(currentTime))
+					// );
+					// console.log("result of appt", values.appointmentdate);
+					// console.log(
+					// 	moment(values.appointmentdate).format("YYYY-MM-DD") +
+					// 		"T00:00:00.000+00:00" ===
+					// 		currentdate
+					// );
+					var Notifications = [
+						{
+							expression:
+								moment(values.appointmentdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									nextdate &&
+								appointmenttime.diff(currentTime, "minutes") === 0,
+							patienttitle: "Appointment Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your appointment with " +
+								values.doctor_details[0].firstName +
+								" is happening soon in 24 hours",
+							doctortitle: "Appointment Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your appointment with " +
+								values.patient_details[0].firstName +
+								" is happening soon in 24 hours",
+							time: "receiveNotification24hr",
+							kind: "treatment",
+						},
+						{
+							expression:
+								moment(values.appointmentdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								appointmenttime.diff(currentTime, "minutes") === 120,
+							patienttitle: "Appointment Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your appointment with " +
+								values.doctor_details[0].firstName +
+								" is happening soon in 2 hours",
+							doctortitle: "Appointment Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your appointment with " +
+								values.patient_details[0].firstName +
+								" is happening soon in 2 hours",
+							time: "receiveNotification2hr",
+							kind: "treatment",
+						},
+						{
+							expression:
+								moment(values.appointmentdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								appointmenttime.diff(currentTime, "minutes") === 60,
+							patienttitle: "Appointment Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your appointment with " +
+								values.doctor_details[0].firstName +
+								" is happening soon in 1 hour",
+							doctortitle: "Appointment Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your appointment with " +
+								values.patient_details[0].firstName +
+								" is happening soon in 1 hour",
+							time: "receiveNotification1hr",
+							kind: "treatment",
+						},
+						{
+							expression:
+								moment(values.appointmentdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								appointmenttime.diff(currentTime, "minutes") === 15,
+							patienttitle: "Appointment Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your appointment with " +
+								values.doctor_details[0].firstName +
+								" is happening soon in 15 mins",
+							doctortitle: "Appointment Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your appointment with " +
+								values.patient_details[0].firstName +
+								" is happening soon in 15 mins",
+							time: "receiveNotification2hr",
+							kind: "treatment",
+						},
+						{
+							expression:
+								moment(values.consultationdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									nextdate &&
+								consultationtime.diff(currentTime, "minutes") === 0,
+							patienttitle: "Consultation Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your consultation with " +
+								values.doctor_details[0].firstName +
+								" is happening in 24 hours",
+							doctortitle: "Consultation Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your consultation with " +
+								values.patient_details[0].firstName +
+								" is happening in 24 hours",
+							time: "receiveNotification24hr",
+							kind: "consultation",
+						},
+						{
+							expression:
+								moment(values.consultationdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								consultationtime.diff(currentTime, "minutes") === 120,
+							patienttitle: "Consultation Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your consultation with " +
+								values.doctor_details[0].firstName +
+								" starts in 2 hours",
+							doctortitle: "Consultation Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your consultation with " +
+								values.patient_details[0].firstName +
+								" starts in 2 hours",
+							time: "receiveNotification2hr",
+							kind: "consultation",
+						},
+						{
+							expression:
+								moment(values.consultationdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								consultationtime.diff(currentTime, "minutes") === 60,
+							patienttitle: "Consultation Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your consultation with " +
+								values.doctor_details[0].firstName +
+								" starts in 1 hr",
+							doctortitle: "Consultation Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your consultation with " +
+								values.patient_details[0].firstName +
+								" starts in 1 hour",
+							time: "receiveNotification1hr",
+							kind: "consultation",
+						},
+						{
+							expression:
+								moment(values.consultationdate).format("YYYY-MM-DD") +
+									"T00:00:00.000+00:00" ===
+									currentdate &&
+								consultationtime.diff(currentTime, "minutes") === 15,
+							patienttitle: "Consultation Reminder",
+							patientvalue:
+								"Hey " +
+								values.patient_details[0].firstName +
+								" your consultation with " +
+								values.doctor_details[0].firstName +
+								" starts in 15 mins",
+							doctortitle: "Consultation Reminder",
+							doctorvalue:
+								"Hey " +
+								values.doctor_details[0].firstName +
+								" your consultation with " +
+								values.patient_details[0].firstName +
+								" starts in 15 mins",
+							time: "receiveNotification15min",
+							kind: "consultation",
+						},
+					];
+
+					Object.values(Notifications).forEach((noti) => {
+						if (noti.expression === true) {
+							// console.log(noti);
+							// var kind = noti.kind;
+							if (values.isnotificationenable === true) {
+								patientsettings.find(
+									{
+										patientid: values.patientid,
+										[noti.kind]: {
+											$elemMatch: {
+												[noti.time]: true,
+											},
+										},
+									},
+									function (error, res) {
+										let patientData = returnNotificationData(
+											values.patient_details[0].channelid.split("|"),
+											noti.patientvalue,
+											noti.patienttitle,
+											"patient",
+											values._id.toString()
+										);
+										// appnotification.insertOne(
+										// 	{
+										// 		appointmentid: values.id,
+										// 		patientid: patient.patientid,
+										// 		date: currentdate,
+										// 		time: currentTime,
+										// 		title: noti.patienttitle,
+										// 		description: noti.patientvalue,
+										// 		isopened: false,
+										// 	},
+										// 	function (err, result) {
+										// 		if (err) {
+										// 			console.log(err);
+										// 		} else {
+										// 			console.log(result);
+										// 		}
+										// 	}
+										// );
+										let newdata = new appnotification({
+											appointmentid: values.id,
+											patientid: values.patientid,
+											date: moment().format("YYYY-MM-DD"),
+											time: moment().format("HH:mm"),
+											title: noti.patienttitle,
+											description: noti.patientvalue,
+											isopened: false,
+										});
+										newdata.save();
+										SendNotification(patientData);
+									}
+								);
+								var doctorcheck =
+									noti.kind === "consultation"
+										? values.settings[0].notification[0].e_conslt_request
+										: values.settings[0].notification[0].e_apt_activity;
+
+								if (doctorcheck === true) {
+									let doctorData = returnNotificationData(
+										values.doctor_details[0].channelid.split("|"),
+										noti.doctorvalue,
+										noti.doctortitle,
+										"doctor",
+										values._id.toString()
+									);
+									SendNotification(doctorData);
+								}
+							}
+							// result.forEach((patient) => {
+
+							// });
+						}
+					});
+
+					if (
+						moment(values.consultationdate).format("YYYY-MM-DD") +
+							"T00:00:00.000+00:00" ===
+							currentdate &&
+						currentTime.diff(consultationtime, "minutes") === 15
+					) {
+						// result.forEach((patient) => {
+						if (
+							values.ispatientjoined === false &&
+							values.isdoctorjoined === true
+						) {
+							if (values.isnotificationenable === true) {
+								patientsettings.find(
+									{
+										patientid: values.patientid,
+										consultation: {
+											$elemMatch: {
+												receiveNotification: true,
+											},
+										},
+									},
+									function (error, res) {
+										let patientData = returnNotificationData(
+											values.patient_details[0].channelid.split("|"),
+											"Hey " +
+												values.patient_details[0].firstName +
+												" your missed the consultation with " +
+												values.doctor_details[0].firstName,
+											"Consultation Missed",
+											"patient",
+											values._id.toString()
+										);
+										let newdata = new appnotification({
+											appointmentid: values.id,
+											patientid: values.patientid,
+											date: moment().format("YYYY-MM-DD"),
+											time: moment().format("HH:mm"),
+											title:
+												"Hey " +
+												values.patient_details[0].firstName +
+												" your missed the consultation with " +
+												values.doctor_details[0].firstName,
+											description: "Consultation Missed",
+											isopened: false,
+										});
+										newdata.save();
+										SendNotification(patientData);
+									}
+								);
+							}
+							if (
+								values.settings[0].notification[0].e_conslt_request === true
+							) {
+								let doctorData = returnNotificationData(
+									values.doctor_details[0].channelid.split("|"),
+									"Hey " +
+										values.doctor_details[0].firstName +
+										", " +
+										values.patient_details[0].firstName +
+										"missed the consultation",
+									"Doctor missed consultation",
+									"doctor",
+									values._id.toString()
+								);
+								SendNotification(doctorData);
+							}
+						} else if (
+							values.ispatientjoined === true &&
+							values.isdoctorjoined === false
+						) {
+							if (values.isnotificationenable === true) {
+								patientsettings.find(
+									{
+										patientid: values.patientid,
+										consultation: {
+											$elemMatch: {
+												receiveNotification: true,
+											},
+										},
+									},
+									function (error, res) {
+										let patientData = returnNotificationData(
+											values.patient_details[0].channelid.split("|"),
+											"Hey " +
+												values.patient_details[0].firstName +
+												", " +
+												values.doctor_details[0].firstName +
+												" missed the consultation",
+											"Doctor missed consultation",
+											"patient",
+											values._id.toString()
+										);
+										let newdata = new appnotification({
+											appointmentid: values.id,
+											patientid: values.patientid,
+											date: moment().format("YYYY-MM-DD"),
+											time: moment().format("HH:mm"),
+											title:
+												"Hey " +
+												values.patient_details[0].firstName +
+												", " +
+												values.doctor_details[0].firstName,
+											description: "Doctor missed consultation",
+											isopened: false,
+										});
+										newdata.save();
+										SendNotification(patientData);
+									}
+								);
+							}
+							if (
+								values.settings[0].notification[0].e_conslt_request === true
+							) {
+								let doctorData = returnNotificationData(
+									values.doctor_details[0].channelid.split("|"),
+									"Hey " +
+										values.doctor_details[0].firstName +
+										" you missed the consultation with " +
+										values.patient_details[0].firstName,
+									"Consultation Missed",
+									"doctor",
+									values._id.toString()
+								);
+								SendNotification(doctorData);
+							}
+						} else if (
+							values.ispatientjoined === false &&
+							values.isdoctorjoined === false
+						) {
+							if (values.isnotificationenable === true) {
+								patientsettings.find(
+									{
+										patientid: values.patientid,
+										consultation: {
+											$elemMatch: {
+												receiveNotification: true,
+											},
+										},
+									},
+									function (error, res) {
+										let patientData = returnNotificationData(
+											values.patient_details[0].channelid.split("|"),
+											"Hey " +
+												values.patient_details[0].firstName +
+												" your missed the consultation with " +
+												values.doctor_details[0].firstName,
+											"Consultation Missed",
+											"patient",
+											values._id.toString()
+										);
+										let newdata = new appnotification({
+											appointmentid: values.id,
+											patientid: values.patientid,
+											date: moment().format("YYYY-MM-DD"),
+											time: moment().format("HH:mm"),
+											title:
+												"Hey " +
+												values.patient_details[0].firstName +
+												" your missed the consultation with " +
+												values.doctor_details[0].firstName,
+											description: "Consultation Missed",
+											isopened: false,
+										});
+										newdata.save();
+										SendNotification(patientData);
+									}
+								);
+							}
+							if (
+								values.settings[0].notification[0].e_conslt_request === true
+							) {
+								let doctorData = returnNotificationData(
+									values.doctor_details[0].channelid.split("|"),
+									"Hey " +
+										values.doctor_details[0].firstName +
+										" your missed the consultation with " +
+										values.patient_details[0].firstName,
+									"Consultation Missed",
+									"doctor",
+									values._id.toString()
+								);
+								SendNotification(doctorData);
+							}
+						}
+						// });
+					}
+				});
+			}
+		}
+	);
+}
+
+setInterval(Airshippushnotifications, 60000);
+
+app.get("/pushNotificationsSend", (req, res) => {
+	// console.log("req pushNotificationsSend", req.body);
+	// {
+	//         "audience": {
+	//             "OR": [
+	//                 { "android_channel": userChannelIds },
+	//                 { "ios_channel": userChannelIds }
+	//             ]
+	//         },
+	//         "notification": {
+	//             "alert": type === 'appointment' ? appointmentDesc : consultationDesc,
+	//             "android": {
+	//                  "title": titleTxt + " Confirmed"
+	//              },
+	//             "ios": {
+	//                 "title": titleTxt + " Confirmed"
+	//             },
+	//             "actions": {
+	//                 "open": {
+	//                     "type": "deep_link",
+	//                     "content": JSON.stringify(deeplinkContent),
+	//                     "fallback_url": "doctorapp://aesthetik.app/appointment_screen/{apptId}"
+	//                 }
+	//             }
+	//         },
+	//         "device_types": ["android","ios"]
+	//     };
+	// var returnstring = {
+	// 	senddata: {
+	// 		audience: {
+	// 			OR: [
+	// 				{ android_channel: ["b898df43-0616-4ed2-ab2b-f1e54b3a0e1d"] },
+	// 				{ ios_channel: ["219b7715-3b81-403d-be02-00429074f60b"] },
+	// 			],
+	// 		},
+	// 		notification: {
+	// 			alert: "alertvalue",
+	// 			android: {
+	// 				title: "titlevalue",
+	// 			},
+	// 			ios: {
+	// 				title: "titlevalue",
+	// 			},
+	// 			actions: {
+	// 				open: {
+	// 					type: "deep_link",
+	// 					content: "Appointment screen",
+	// 					fallback_url:
+	// 						"doctorapp://aesthetik.app/appointment_screen/{apptId}",
+	// 				},
+	// 			},
+	// 		},
+	// 		device_types: ["android", "ios"],
+	// 	},
+	// 	role: "patient",
+	// };
+	SendNotification(req.body).then((result) => {
+		res.send(result);
+	});
+	// SendNotification(returnstring).then((result) => {
+	// 	res.send(result);
+	// });
+});
+
+const SendNotification = (data) => {
+	// console.log("data", data);
+	const appKey =
+		data.role === "patient"
+			? process.env.AIRSHIP_APIKEY_PATIENT
+			: process.env.AIRSHIP_APIKEY_DOCTOR;
+	const masterSecret =
+		data.role === "patient"
+			? process.env.AIRSHIP_MASTERSECRET_PATIENT
+			: process.env.AIRSHIP_MASTERSECRET_DOCTOR;
+	// console.log("masterSecret", data.role, masterSecret);
+	const basicToken = base64.encode(appKey + ":" + masterSecret);
+	return axios({
+		url: process.env.AIRSHIP_URL,
+		method: "POST",
+		data: data.senddata,
+		headers: {
+			"Content-Type": "application/json",
+			Accept: "application/vnd.urbanairship+json; version=3",
+			Authorization: "Basic " + basicToken,
+		},
+	})
+		.then((result) => {
+			// console.log("result...", result);
+			// console.log("sent data", JSON.stringify(data.senddata));
+			// console.log("patient APP KEY", process.env.AIRSHIP_APIKEY_PATIENT);
+			// console.log(
+			// 	"patient master secret",
+			// 	process.env.AIRSHIP_MASTERSECRET_PATIENT
+			// );
+			// console.log("basicToken(appkey + master secret key)", basicToken);
+			// console.log("URL", process.env.AIRSHIP_URL);
+
+			return result.data;
+		})
+		.catch(function (error) {
+			console.log("Error...", error.response.data);
+		});
+};
 
 app.get("/sumsubdoctor", (req, res) => {
 	res.send(process.env.DOCTORLEVELNAME);
@@ -588,6 +1494,9 @@ app.post("/CreateToken", (req, res) => {
 	function createAccessToken(externalUserId, levelName, ttlInSecs = 600) {
 		var method = "post";
 		var url;
+		if (req.body.params.isadmin === "patient") {
+			url = `/resources/accessTokens?userId=${externalUserId}&ttlInSecs=${ttlInSecs}&levelName=${process.env.PATIENTLEVELNAME}`;
+		}
 		if (req.body.params.isadmin) {
 			url = `/resources/accessTokens?userId=${externalUserId}&ttlInSecs=${ttlInSecs}&levelName=${process.env.ADMINLEVELNAME}`;
 		} else {
