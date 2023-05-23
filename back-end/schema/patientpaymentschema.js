@@ -16,9 +16,12 @@ const PatientpaymentType = new GraphQLObjectType({
 	fields: {
 		id: { type: GraphQLID },
 		appointmentid: { type: GraphQLString },
+		paymentstatus: { type: GraphQLString },
+		paymentintent: { type: GraphQLString },
 		date: { type: GraphQLString },
 		amount: { type: GraphQLString },
 		kind: { type: GraphQLString },
+		stripeaccount: { type: GraphQLString },
 		month: { type: GraphQLString },
 		year: { type: GraphQLString },
 		tax: { type: GraphQLString },
@@ -62,6 +65,32 @@ const rootquery = new GraphQLObjectType({
 			resolve: (root, args, context, info) => {
 				return PatientpaymentModel.find({
 					appointmentid: args.appointmentid,
+					paymentstatus: "success",
+				}).exec();
+			},
+		},
+		// Query 4
+		patientpaymentByPaymentintent: {
+			type: new GraphQLList(PatientpaymentType),
+			args: {
+				paymentintent: { type: GraphQLString },
+			},
+			resolve: (root, args, context, info) => {
+				return PatientpaymentModel.find({
+					paymentintent: args.paymentintent,
+				}).exec();
+			},
+		},
+		// Query 5
+		patientpaymentByAppointmentIDSuccess: {
+			type: new GraphQLList(PatientpaymentType),
+			args: {
+				appointmentid: { type: GraphQLString },
+			},
+			resolve: (root, args, context, info) => {
+				return PatientpaymentModel.find({
+					appointmentid: args.appointmentid,
+					paymentstatus: "success",
 				}).exec();
 			},
 		},
@@ -76,9 +105,12 @@ const mutation = new GraphQLObjectType({
 			args: {
 				id: { type: GraphQLID },
 				appointmentid: { type: GraphQLString },
+				paymentstatus: { type: GraphQLString },
+				paymentintent: { type: GraphQLString },
 				date: { type: GraphQLString },
 				amount: { type: GraphQLString },
 				kind: { type: GraphQLString },
+				stipeaccount: { type: GraphQLString },
 				month: { type: GraphQLString },
 				year: { type: GraphQLString },
 				tax: { type: GraphQLString },

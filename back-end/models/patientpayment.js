@@ -2,12 +2,13 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
 const patientpaymentSchema = new Schema({
+	paymentintent: String,
+	paymentstatus: String,
 	appointmentid: String,
 	date: String,
+	stipeaccount: String,
 	amount: String,
-	kind: String, 
-	month: String,
-	year: String,
+	kind: String,
 	tax: String,
 	refund: String,
 });

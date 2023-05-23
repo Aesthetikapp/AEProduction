@@ -39,20 +39,18 @@ const rootquery = new GraphQLObjectType({
 				return UserSubscriptionModel.find().exec();
 			},
 		},
-		// SubscriptionByUserID: {
-		// 	// name of the query is people by id
-		// 	type: Subscription,
-		// 	args: {
-		// 		// strong validation for graphqlid, which is mendatory for running this query
-		// 		userid: { type: GraphQLString },
-		// 	},
-		// 	resolve: (root, args, context, info) => {
-		// 		// console.log(args);
-		// 		return UserSubscriptionModel.findOne({
-		// 			userid: args.userid,
-		// 		}).exec();
-		// 	},
-		// },
+		SubscriptionByID: {
+			// name of the query is people by id
+			type: Subscription,
+			args: {
+				// strong validation for graphqlid, which is mendatory for running this query
+				id: { type: GraphQLString },
+			},
+			resolve: (root, args, context, info) => {
+				// console.log(args);
+				return UserSubscriptionModel.findById(args.id).exec();
+			},
+		},
 	},
 });
 
