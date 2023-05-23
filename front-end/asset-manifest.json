@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.aece297a.css",
-    "main.js": "/static/js/main.6a60500b.js",
+    "main.js": "/static/js/main.1e973d03.js",
     "static/media/Raleway-VariableFont_wght.ttf": "/static/media/Raleway-VariableFont_wght.3fefe681f4c62116679b.ttf",
     "static/media/woman-wellness-center-during-skin-treatment 1.png": "/static/media/woman-wellness-center-during-skin-treatment 1.9c4ff5997e01e9184d5d.png",
     "static/media/Mulish-VariableFont_wght.ttf": "/static/media/Mulish-VariableFont_wght.bcafeb0fadf20710b1c6.ttf",
@@ -17,6 +17,6 @@
   },
   "entrypoints": [
     "static/css/main.aece297a.css",
-    "static/js/main.6a60500b.js"
+    "static/js/main.1e973d03.js"
   ]
 }

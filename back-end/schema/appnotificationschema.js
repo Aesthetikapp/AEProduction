@@ -15,16 +15,12 @@ const {
 const AppnotificationType = new GraphQLObjectType({
 	name: "Appnotification",
 	fields: {
-		id: { type: GraphQLID },
 		appointmentid: { type: GraphQLString },
 		patientid: { type: GraphQLString },
-		doctorid: { type: GraphQLString },
 		date: { type: GraphQLString },
 		time: { type: GraphQLString },
 		title: { type: GraphQLString },
 		description: { type: GraphQLString },
-		deeplink: { type: GraphQLString },
-		kind: { type: GraphQLString },
 		isopened: { type: GraphQLBoolean },
 	},
 });
@@ -66,18 +62,7 @@ const rootquery = new GraphQLObjectType({
 				return AppnotificationModel.find({ patientid: args.patientid }).exec();
 			},
 		},
-
-		appnotificationByDoctorid: {
-			type: new GraphQLList(AppnotificationType),
-			args: {
-				doctorid: { type: GraphQLString },
-			},
-			resolve: (root, args, context, info) => {
-				return AppnotificationModel.find({ doctorid: args.doctorid }).exec();
-			},
-		},
-
-		appnotificationByAppointmentid: {
+		notificationByAppointmentid: {
 			type: new GraphQLList(AppnotificationType),
 			args: {
 				appointmentid: { type: GraphQLString },
@@ -114,13 +99,10 @@ const mutation = new GraphQLObjectType({
 			args: {
 				appointmentid: { type: GraphQLString },
 				patientid: { type: GraphQLString },
-				doctorid: { type: GraphQLString },
 				date: { type: GraphQLString },
 				time: { type: GraphQLString },
 				title: { type: GraphQLString },
 				description: { type: GraphQLString },
-				deeplink: { type: GraphQLString },
-				kind: { type: GraphQLString },
 				isopened: { type: GraphQLBoolean },
 			},
 			resolve: (root, args, context, info) => {

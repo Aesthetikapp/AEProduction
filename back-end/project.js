@@ -4,8 +4,6 @@ const ExpressGraphQL = require("express-graphql").graphqlHTTP;
 const personschema = require("./schema/personschema");
 const userschema = require("./schema/aeuserschema");
 const UserModel = require("./models/aeuser");
-const patienthistorymodel = require("./models/patienthistory");
-const subscriptionhistorymodel = require("./models/subscriptionhistory");
 const settings = require("./models/settings");
 const appointmentschema = require("./schema/appointmentschema");
 const patientschema = require("./schema/patientschema");
@@ -30,11 +28,8 @@ const AWS = require("aws-sdk");
 const moment = require("moment");
 const appointment = require("./models/appointment");
 const patient = require("./models/patient");
-const TreatmentsModel = require("./models/treatments");
 const patientsettings = require("./models/patientsettings");
 const appnotification = require("./models/appnotification");
-const patientpayment = require("./models/patientpayment");
-const subscriptionhistory = require("./models/subscriptionhistory");
 const email = require("./email");
 const crypto = require("crypto");
 const FormData = require("form-data");
@@ -59,7 +54,6 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(fileupload());
 const { resolve } = require("path");
-const subscriptionhistoryschema = require("./schema/subscriptionhistoryschema");
 
 const APP_ID = process.env.APP_ID;
 const APP_CERTIFICATE = process.env.APP_CERTIFICATE;
@@ -180,11 +174,6 @@ app.use(
 );
 
 app.use(
-	"/subscriptionhistory",
-	ExpressGraphQL({ schema: subscriptionhistoryschema, graphiql: true })
-);
-
-app.use(
 	"/patientpaymentdetails",
 	ExpressGraphQL({ schema: patientpaymentdetailsschema, graphiql: true })
 );
@@ -269,7 +258,7 @@ app.post("/onboard-user", async (req, res) => {
 
 		UserModel.updateOne(
 			{ _id: req.body.state.id },
-			{ $set: { stripeaccount: account.id, stripestatus: "pending" } },
+			{ $set: { payment: account.id + "|pending" } },
 			function (err, result) {
 				if (err) {
 					console.log(err);
@@ -283,7 +272,7 @@ app.post("/onboard-user", async (req, res) => {
 			type: "account_onboarding",
 			account: account.id,
 			refresh_url: `${origin}/onboard-user/refresh?accountid=${account.id}&id=${req.body.state.id}`,
-			return_url: `${origin}/stripeaccountdone?id=${req.body.state.id}`,
+			return_url: `${origin}/paymentdone?id=${req.body.state.id}`,
 		});
 		// console.log("account", account);
 		// console.log("accountLink.url", accountLink.url);
@@ -314,7 +303,7 @@ app.post("/onboard-user/refresh", async (req, res) => {
 			type: "account_onboarding",
 			account: req.body.accountId,
 			refresh_url: `${origin}/onboard-user/refresh?accountid=${req.body.accountId}&id=${req.body.id}`,
-			return_url: `${origin}/stripeaccountdone?id=${req.body.id}`,
+			return_url: `${origin}/paymentdone?id=${req.body.id}`,
 		});
 
 		console.log("accountLink.url", accountLink);
@@ -478,62 +467,7 @@ app.get("/getAllTreatmentids", (req, res) => {
 });
 
 app.post("/stripeevents", (req, res) => {
-	console.log("stripe", req.body);
-	if (req.body.type === "charge.succeeded") {
-		patienthistorymodel.updateOne(
-			{ paymentintent: req.body.data.object.payment_intent },
-			{ $set: { paymentstatus: "success" } },
-			function (err, result) {
-				if (err) {
-					console.log("err", err);
-				} else {
-					// console.log("result update", result);
-				}
-			}
-		);
-	}
-	if (
-		req.body.type === "checkout.session.completed" &&
-		req.body.data.object.payment_status === "paid"
-	) {
-		console.log("enter");
-		subscriptionhistorymodel.updateOne(
-			{ paymentintent: req.body.data.object.id },
-			{ $set: { paymentstatus: "success" } },
-			function (err, result) {
-				if (err) {
-					console.log("err", err);
-				} else {
-					// console.log("result update", result);
-				}
-			}
-		);
-	}
-});
-
-app.post("/stripeeventsconnect", (req, res) => {
-	console.log("stripe connect", req.body);
-	if (req.body.type === "account.updated") {
-		// console.log("enter account");
-		if (
-			req.body.data.object.payouts_enabled === true &&
-			req.body.data.object.charges_enabled === true
-		) {
-			// console.log("enter account condition");
-
-			UserModel.updateOne(
-				{ stripeaccount: req.body.account },
-				{ $set: { stripestatus: "completed" } },
-				function (err, result) {
-					if (err) {
-						console.log("err", err);
-					} else {
-						// console.log("result update", result);
-					}
-				}
-			);
-		}
-	}
+	console.log("req post stripe", req.body);
 });
 
 app.post("/sumsubstatuspost", (req, res) => {
@@ -546,7 +480,7 @@ app.post("/sumsubstatuspost", (req, res) => {
 		) {
 			patient.updateOne(
 				{ _id: req.body.externalUserId },
-				{ $set: { sumsubstatus: "Approved" } },
+				{ $set: { sumsubstatus: "accepted" } },
 				function (err, result) {
 					if (err) {
 						console.log(err);
@@ -560,17 +494,15 @@ app.post("/sumsubstatuspost", (req, res) => {
 					console.log(err);
 				} else {
 					// console.log(result);
-					if (result !== null) {
-						email.sendEmail({ type: "accepted", user: result });
-						let patientData = returnNotificationData(
-							result.channelid.split("|"),
-							"ID verification",
-							"All checks complete and approved",
-							"patient",
-							"KYC"
-						);
-						SendNotification(patientData);
-					}
+					email.sendEmail({ type: "accepted", user: result });
+					let patientData = returnNotificationData(
+						result.channelid.split("|"),
+						"ID verification",
+						"All checks complete and approved",
+						"patient",
+						"KYC"
+					);
+					SendNotification(patientData);
 				}
 			});
 		}
@@ -594,17 +526,15 @@ app.post("/sumsubstatuspost", (req, res) => {
 					console.log(err);
 				} else {
 					// console.log(result);
-					if (result !== null) {
-						email.sendEmail({ type: "error", user: result });
-						let patientData = returnNotificationData(
-							result.channelid.split("|"),
-							"ID verification",
-							"Something is not right, please try again ",
-							"patient",
-							"KYC"
-						);
-						SendNotification(patientData);
-					}
+					email.sendEmail({ type: "error", user: result });
+					let patientData = returnNotificationData(
+						result.channelid.split("|"),
+						"ID verification",
+						"Something is not right, please try again ",
+						"patient",
+						"KYC"
+					);
+					SendNotification(patientData);
 				}
 			});
 		}
@@ -615,7 +545,7 @@ app.post("/sumsubstatuspost", (req, res) => {
 		) {
 			UserModel.updateOne(
 				{ _id: req.body.externalUserId },
-				{ $set: { sumsubstatus: "accepted" } },
+				{ $set: { title: "accepted" } },
 				function (err, result) {
 					if (err) {
 						console.log(err);
@@ -631,18 +561,16 @@ app.post("/sumsubstatuspost", (req, res) => {
 						console.log(err);
 					} else {
 						// console.log(result);
-						if (result !== null) {
-							email.sendEmail({ type: "accepted", user: result });
-							if (result.channelid !== "") {
-								let data = returnNotificationData(
-									result.channelid.split("|"),
-									"ID verification",
-									"All checks complete and approved",
-									"doctor",
-									"KYC"
-								);
-								SendNotification(data);
-							}
+						email.sendEmail({ type: "accepted", user: result });
+						if (result.channelid !== "") {
+							let data = returnNotificationData(
+								result.channelid.split("|"),
+								"ID verification",
+								"All checks complete and approved",
+								"doctor",
+								"KYC"
+							);
+							SendNotification(data);
 						}
 					}
 				}
@@ -654,7 +582,7 @@ app.post("/sumsubstatuspost", (req, res) => {
 		) {
 			UserModel.updateOne(
 				{ _id: req.body.externalUserId },
-				{ $set: { sumsubstatus: "error" } },
+				{ $set: { title: "error" } },
 				function (err, result) {
 					if (err) {
 						console.log(err);
@@ -670,18 +598,16 @@ app.post("/sumsubstatuspost", (req, res) => {
 						console.log(err);
 					} else {
 						// console.log(result);
-						if (result !== null) {
-							email.sendEmail({ type: "error", user: result });
-							if (result.channelid !== "") {
-								let data = returnNotificationData(
-									result.channelid.split("|"),
-									"ID verification",
-									"Something is not right, please try again ",
-									"doctor",
-									"KYC"
-								);
-								SendNotification(data);
-							}
+						email.sendEmail({ type: "error", user: result });
+						if (result.channelid !== "") {
+							let data = returnNotificationData(
+								result.channelid.split("|"),
+								"ID verification",
+								"Something is not right, please try again ",
+								"doctor",
+								"KYC"
+							);
+							SendNotification(data);
 						}
 					}
 				}
@@ -770,30 +696,6 @@ const returnNotificationData = (
 	rolevalue,
 	viewscreen
 ) => {
-	// let patientdata = {
-	// 	senddata: {
-	// 		audience: {
-	// 			OR: [
-	// 				{
-	// 					android_channel:
-	// 						props.reschedule.patient_details[0].channelid.split("|"),
-	// 				},
-	// 				{
-	// 					ios_channel:
-	// 						props.reschedule.patient_details[0].channelid.split("|"),
-	// 				},
-	// 			],
-	// 		},
-	// 		notification: {
-	// 			alert:
-	// 				"The " +
-	// 				props.reschedule.doctor_details[0].firstName +
-	// 				" confirms the new appoint date and time.",
-	// 		},
-	// 		device_types: ["android", "ios"],
-	// 	},
-	// 	role: "patient",
-	// };
 	// console.log("channel", channelid);
 	// console.log("alert", alertvalue);
 	// console.log("title", titlevalue);
@@ -808,36 +710,22 @@ const returnNotificationData = (
 	var returnstring = {
 		senddata: {
 			audience: {
-				OR: [
-					{
-						android_channel: channelid,
-					},
-					{
-						ios_channel: channelid,
-					},
-				],
-				// android_channel: channelid,
+				android_channel: channelid,
 			},
 			notification: {
 				alert: alertvalue,
 				android: {
 					title: titlevalue,
 				},
-				ios: {
-					title: titlevalue,
-				},
 				actions: {
 					open: {
 						type: "deep_link",
 						content: JSON.stringify(deeplinkContent),
-						fallback_url:
-							rolevalue === "doctor"
-								? `doctorapp://aesthetik.app/appointment_screen/${viewscreen}`
-								: `patientapp://aesthetik.app/appointment_screen/${viewscreen}`,
+						fallback_url: `doctorapp://aesthetik.app/appointment_screen/${viewscreen}`,
 					},
 				},
 			},
-			device_types: ["android", "ios"],
+			device_types: ["android"],
 		},
 		role: rolevalue,
 	};
@@ -1159,30 +1047,14 @@ function Airshippushnotifications() {
 										// 		}
 										// 	}
 										// );
-										const deeplinkContent = {
-											screen: "AppointmentScreen",
-											appointmentId: values._id.toString(),
-											navigateTo: "AppointmentDetails",
-										};
 										let newdata = new appnotification({
-											// appointmentid: "",
-											// patientid: data.patientid,
-											// date: moment().format("YYYY-MM-DD"),
-											// time: moment().format("HH:mm"),
-											// title: data.senddata.notification.android.title,
-											// description: data.senddata.notification.alert,
-											// kind: "reschedule",
-											// isopened: false,
-											// deeplink: "",
-											appointmentid: values._id.toString(),
+											appointmentid: values.id,
 											patientid: values.patientid,
 											date: moment().format("YYYY-MM-DD"),
 											time: moment().format("HH:mm"),
 											title: noti.patienttitle,
 											description: noti.patientvalue,
-											kind: noti.kind,
 											isopened: false,
-											deeplink: JSON.stringify(deeplinkContent),
 										});
 										newdata.save();
 										SendNotification(patientData);
@@ -1193,10 +1065,7 @@ function Airshippushnotifications() {
 										? values.settings[0].notification[0].e_conslt_request
 										: values.settings[0].notification[0].e_apt_activity;
 
-								if (
-									doctorcheck === true &&
-									values.doctor_details[0].channelid !== ""
-								) {
+								if (doctorcheck === true) {
 									let doctorData = returnNotificationData(
 										values.doctor_details[0].channelid.split("|"),
 										noti.doctorvalue,
@@ -1205,40 +1074,6 @@ function Airshippushnotifications() {
 										values._id.toString()
 									);
 									SendNotification(doctorData);
-								}
-
-								var doctorcheck1 =
-									noti.kind === "consultation"
-										? values.settings[0].appointment[0].autoacceptconsult
-										: values.settings[0].appointment[0].autoacceptbooking;
-
-								if (doctorcheck1 === true) {
-									const deeplinkContent = {
-										screen: "AppointmentScreen",
-										appointmentId: values._id.toString(),
-										navigateTo: "AppointmentDetails",
-									};
-									let newdata = new appnotification({
-										// appointmentid: "",
-										// patientid: data.patientid,
-										// date: moment().format("YYYY-MM-DD"),
-										// time: moment().format("HH:mm"),
-										// title: data.senddata.notification.android.title,
-										// description: data.senddata.notification.alert,
-										// kind: "reschedule",
-										// isopened: false,
-										// deeplink: "",
-										appointmentid: values._id.toString(),
-										doctorid: values.doctorid,
-										date: moment().format("YYYY-MM-DD"),
-										time: moment().format("HH:mm"),
-										title: noti.doctortitle,
-										description: noti.doctorvalue,
-										kind: noti.kind,
-										isopened: false,
-										deeplink: JSON.stringify(deeplinkContent),
-									});
-									newdata.save();
 								}
 							}
 							// result.forEach((patient) => {
@@ -1279,13 +1114,8 @@ function Airshippushnotifications() {
 											"patient",
 											values._id.toString()
 										);
-										const deeplinkContent = {
-											screen: "AppointmentScreen",
-											appointmentId: values._id.toString(),
-											navigateTo: "AppointmentDetails",
-										};
 										let newdata = new appnotification({
-											appointmentid: values._id.toString(),
+											appointmentid: values.id,
 											patientid: values.patientid,
 											date: moment().format("YYYY-MM-DD"),
 											time: moment().format("HH:mm"),
@@ -1295,9 +1125,7 @@ function Airshippushnotifications() {
 												" your missed the consultation with " +
 												values.doctor_details[0].firstName,
 											description: "Consultation Missed",
-											kind: "consultation",
 											isopened: false,
-											deeplink: JSON.stringify(deeplinkContent),
 										});
 										newdata.save();
 										SendNotification(patientData);
@@ -1305,8 +1133,7 @@ function Airshippushnotifications() {
 								);
 							}
 							if (
-								values.settings[0].notification[0].e_conslt_request === true &&
-								values.doctor_details[0].channelid !== ""
+								values.settings[0].notification[0].e_conslt_request === true
 							) {
 								let doctorData = returnNotificationData(
 									values.doctor_details[0].channelid.split("|"),
@@ -1347,13 +1174,8 @@ function Airshippushnotifications() {
 											"patient",
 											values._id.toString()
 										);
-										const deeplinkContent = {
-											screen: "AppointmentScreen",
-											appointmentId: values._id.toString(),
-											navigateTo: "AppointmentDetails",
-										};
 										let newdata = new appnotification({
-											appointmentid: values._id.toString(),
+											appointmentid: values.id,
 											patientid: values.patientid,
 											date: moment().format("YYYY-MM-DD"),
 											time: moment().format("HH:mm"),
@@ -1363,9 +1185,7 @@ function Airshippushnotifications() {
 												", " +
 												values.doctor_details[0].firstName,
 											description: "Doctor missed consultation",
-											kind: "consultation",
 											isopened: false,
-											deeplink: JSON.stringify(deeplinkContent),
 										});
 										newdata.save();
 										SendNotification(patientData);
@@ -1373,8 +1193,7 @@ function Airshippushnotifications() {
 								);
 							}
 							if (
-								values.settings[0].notification[0].e_conslt_request === true &&
-								values.doctor_details[0].channelid !== ""
+								values.settings[0].notification[0].e_conslt_request === true
 							) {
 								let doctorData = returnNotificationData(
 									values.doctor_details[0].channelid.split("|"),
@@ -1413,13 +1232,8 @@ function Airshippushnotifications() {
 											"patient",
 											values._id.toString()
 										);
-										const deeplinkContent = {
-											screen: "AppointmentScreen",
-											appointmentId: values._id.toString(),
-											navigateTo: "AppointmentDetails",
-										};
 										let newdata = new appnotification({
-											appointmentid: values._id.toString(),
+											appointmentid: values.id,
 											patientid: values.patientid,
 											date: moment().format("YYYY-MM-DD"),
 											time: moment().format("HH:mm"),
@@ -1430,8 +1244,6 @@ function Airshippushnotifications() {
 												values.doctor_details[0].firstName,
 											description: "Consultation Missed",
 											isopened: false,
-											kind: "consultation",
-											deeplink: JSON.stringify(deeplinkContent),
 										});
 										newdata.save();
 										SendNotification(patientData);
@@ -1439,8 +1251,7 @@ function Airshippushnotifications() {
 								);
 							}
 							if (
-								values.settings[0].notification[0].e_conslt_request === true &&
-								values.doctor_details[0].channelid !== ""
+								values.settings[0].notification[0].e_conslt_request === true
 							) {
 								let doctorData = returnNotificationData(
 									values.doctor_details[0].channelid.split("|"),
@@ -1466,7 +1277,61 @@ function Airshippushnotifications() {
 setInterval(Airshippushnotifications, 60000);
 
 app.post("/pushNotificationsSend", (req, res) => {
-	// console.log("req", req.body);
+	// console.log("req pushNotificationsSend", req.body);
+	// {
+	//         "audience": {
+	//             "OR": [
+	//                 { "android_channel": userChannelIds },
+	//                 { "ios_channel": userChannelIds }
+	//             ]
+	//         },
+	//         "notification": {
+	//             "alert": type === 'appointment' ? appointmentDesc : consultationDesc,
+	//             "android": {
+	//                  "title": titleTxt + " Confirmed"
+	//              },
+	//             "ios": {
+	//                 "title": titleTxt + " Confirmed"
+	//             },
+	//             "actions": {
+	//                 "open": {
+	//                     "type": "deep_link",
+	//                     "content": JSON.stringify(deeplinkContent),
+	//                     "fallback_url": "doctorapp://aesthetik.app/appointment_screen/{apptId}"
+	//                 }
+	//             }
+	//         },
+	//         "device_types": ["android","ios"]
+	//     };
+	// var returnstring = {
+	// 	senddata: {
+	// 		audience: {
+	// 			OR: [
+	// 				{ android_channel: ["b898df43-0616-4ed2-ab2b-f1e54b3a0e1d"] },
+	// 				{ ios_channel: ["219b7715-3b81-403d-be02-00429074f60b"] },
+	// 			],
+	// 		},
+	// 		notification: {
+	// 			alert: "alertvalue",
+	// 			android: {
+	// 				title: "titlevalue",
+	// 			},
+	// 			ios: {
+	// 				title: "titlevalue",
+	// 			},
+	// 			actions: {
+	// 				open: {
+	// 					type: "deep_link",
+	// 					content: "Appointment screen",
+	// 					fallback_url:
+	// 						"doctorapp://aesthetik.app/appointment_screen/{apptId}",
+	// 				},
+	// 			},
+	// 		},
+	// 		device_types: ["android", "ios"],
+	// 	},
+	// 	role: "patient",
+	// };
 	SendNotification(req.body).then((result) => {
 		res.send(result);
 	});
@@ -1475,126 +1340,8 @@ app.post("/pushNotificationsSend", (req, res) => {
 	// });
 });
 
-app.post("/create-refund", async (req, res) => {
-	const refund = await stripe.refunds.create(
-		{
-			amount: req.body.amount * 100,
-			payment_intent: req.body.paymentintent,
-		},
-		{
-			stripeAccount: req.body.stripeaccount,
-		}
-	);
-	console.log("refund", refund);
-	patientpayment.updateOne(
-		{ paymentintent: req.body.paymentintent },
-		{ $set: { refund: req.body.amount } },
-		function (err, result) {
-			if (err) {
-				console.log(err);
-			} else {
-				// console.log(result);
-			}
-		}
-	);
-	res.send(refund);
-});
-
-app.post("/pay_subscription", async (req, res) => {
-	const origin = `${req.headers.origin}`;
-	// console.log("origin", origin);
-	const session = await stripe.checkout.sessions.create({
-		line_items: [
-			{
-				price_data: {
-					currency: "usd",
-					product_data: {
-						name: "Standard Plan",
-						// images:
-						//   'https://aeglobalbucket.s3.amazonaws.com/lokeshpatimeedagmailcom/Profile.png',
-					},
-					unit_amount: (19.99 * 100).toFixed(0),
-				},
-				quantity: 1,
-			},
-		],
-
-		payment_method_types: ["card"],
-		mode: "payment",
-		success_url: `${origin}/subscriptiondone?id=${req.body.id}`,
-		cancel_url: `${origin}/subscriptiondone?id=${req.body.id}`,
-	});
-
-	let newdata = new subscriptionhistory({
-		transactionid: session.id,
-		paymentstatus: "pending",
-		doctorid: req.body.id,
-		planid: req.body.planid,
-		planname: req.body.planname,
-		amount: req.body.amount,
-		subscriptionstartdate: moment(),
-		subscriptionenddate: moment().add(1, "M"),
-	});
-	newdata.save();
-	console.log("session", session);
-	res.send({ url: session.url });
-});
-
-app.post("/payment_sheet", async (req, res) => {
-	console.log("req", req.body);
-	// Use an existing Customer ID if this is a returning customer.
-	// const customer = await stripe.customers.create();
-	// const ephemeralKey = await stripe.ephemeralKeys.create(
-	//   {customer: customer.id},
-	//   {apiVersion: '2022-08-01'}
-	// );
-
-	const paymentIntent = await stripe.paymentIntents.create({
-		amount: req.body.amount * 100,
-		currency: "USD",
-		// customer: customer.id,
-		// payment_method_data: {
-		// 	type: "card",
-		// 	card: {
-		// 		number: "4242424242424242", //# Replace with the actual card number.
-		// 		exp_month: 12, //# Replace with the actual expiration month.
-		// 		exp_year: 2023, //# Replace with the actual expiration year.
-		// 		cvc: "123", //# Replace with the actual CVC.
-		// 	},
-		// },
-		automatic_payment_methods: {
-			enabled: true,
-		},
-		transfer_data: {
-			destination: req.body.connectedaccount,
-		},
-		application_fee_amount: req.body.applicationfee * 100,
-	});
-	console.log("paymentIntent", paymentIntent.client_secret);
-
-	let newdata = new patientpayment({
-		paymentintent: paymentIntent.id,
-		paymentstatus: "pending",
-		appointmentid: req.body.appointmentid,
-		date: moment().format("YYYY-MM-DD"),
-		amount: req.body.amount,
-		stipeaccount: req.body.connectedaccount,
-		kind: "payment",
-		tax: req.body.applicationfee,
-		refund: "0",
-	});
-	newdata.save();
-	res.send({
-		paymentIntent: paymentIntent.client_secret,
-		// ephemeralKey: ephemeralKey.secret,
-		// customer: customer.id,
-		// publishableKey:
-		//   'pk_test_51LkQC3B02aVPUqomMG8YDacpleaklU2UTYYCj0IAX4v4jWpCAC19bFTu4fLuTKNzpMGKdOqHN94KNeXD8ryoQtpo00VxgBEbJv',
-	});
-});
-
 const SendNotification = (data) => {
-	// console.log("data", JSON.stringify(data));
+	// console.log("data", data);
 	const appKey =
 		data.role === "patient"
 			? process.env.AIRSHIP_APIKEY_PATIENT
@@ -1608,7 +1355,7 @@ const SendNotification = (data) => {
 	return axios({
 		url: process.env.AIRSHIP_URL,
 		method: "POST",
-		data: JSON.stringify(data.senddata),
+		data: data.senddata,
 		headers: {
 			"Content-Type": "application/json",
 			Accept: "application/vnd.urbanairship+json; version=3",
@@ -1626,157 +1373,10 @@ const SendNotification = (data) => {
 			// console.log("basicToken(appkey + master secret key)", basicToken);
 			// console.log("URL", process.env.AIRSHIP_URL);
 
-			// if (
-			// 	data.role === "patient" &&
-			// 	(data.senddata.notification.android.title ===
-			// 		"Reschedule appointment" ||
-			// 		data.senddata.notification.android.title ===
-			// 			"Reschedule consultation")
-			// ) {
-			// 	let newdata = new appnotification({
-			// 		appointmentid: JSON.parse(
-			// 			data.senddata.notification.actions.open.content
-			// 		).appointmentId,
-			// 		patientid: data.patientid,
-			// 		date: moment().format("YYYY-MM-DD"),
-			// 		time: moment().format("HH:mm"),
-			// 		title: data.senddata.notification.android.title,
-			// 		description: data.senddata.notification.alert,
-			// 		kind:
-			// 			data.senddata.notification.android.title ===
-			// 			"Consultation Confirmed"
-			// 				? "consultation"
-			// 				: "treatment",
-			// 		isopened: false,
-			// 		deeplink: data.senddata.notification.actions.open.content,
-			// 	});
-			// 	newdata.save();
-			// }
-
-			// if (
-			// 	data.role === "patient" &&
-			// 	(data.senddata.notification.android.title ===
-			// 		"Consultation Confirmed" ||
-			// 		data.senddata.notification.android.title === "Appointment Confirmed")
-			// ) {
-			// 	let newdata = new appnotification({
-			// 		appointmentid: JSON.parse(
-			// 			data.senddata.notification.actions.open.content
-			// 		).appointmentId,
-			// 		patientid: data.patientid,
-			// 		date: moment().format("YYYY-MM-DD"),
-			// 		time: moment().format("HH:mm"),
-			// 		title: data.senddata.notification.android.title,
-			// 		description: data.senddata.notification.alert,
-			// 		kind:
-			// 			data.senddata.notification.android.title ===
-			// 			"Consultation Confirmed"
-			// 				? "consultation"
-			// 				: "treatment",
-			// 		isopened: false,
-			// 		deeplink: data.senddata.notification.actions.open.content,
-			// 	});
-			// 	newdata.save();
-			// }
-
-			// if (
-			// 	data.role === "doctor" &&
-			// 	(data.senddata.notification.android.title ===
-			// 		"Consultation Confirmed" ||
-			// 		data.senddata.notification.android.title === "Appointment Confirmed")
-			// ) {
-			// 	let newdata = new appnotification({
-			// 		appointmentid: JSON.parse(
-			// 			data.senddata.notification.actions.open.content
-			// 		).appointmentId,
-			// 		doctorid: data.doctorid,
-			// 		date: moment().format("YYYY-MM-DD"),
-			// 		time: moment().format("HH:mm"),
-			// 		title: data.senddata.notification.android.title,
-			// 		description: data.senddata.notification.alert,
-			// 		kind:
-			// 			data.senddata.notification.android.title ===
-			// 			"Consultation Confirmed"
-			// 				? "consultation"
-			// 				: "treatment",
-			// 		isopened: false,
-			// 		deeplink: data.senddata.notification.actions.open.content,
-			// 	});
-			// 	newdata.save();
-			// }
-
-			// if (
-			// 	data.role === "doctor" &&
-			// 	(data.senddata.notification.android.title ===
-			// 		"Reschedule appointment" ||
-			// 		data.senddata.notification.android.title ===
-			// 			"Reschedule consultation")
-			// ) {
-			// 	let newdata = new appnotification({
-			// 		appointmentid: JSON.parse(
-			// 			data.senddata.notification.actions.open.content
-			// 		).appointmentId,
-			// 		doctorid: data.doctorid,
-			// 		date: moment().format("YYYY-MM-DD"),
-			// 		time: moment().format("HH:mm"),
-			// 		title: data.senddata.notification.android.title,
-			// 		description: data.senddata.notification.alert,
-			// 		kind:
-			// 			data.senddata.notification.android.title ===
-			// 			"Consultation Confirmed"
-			// 				? "consultation"
-			// 				: "treatment",
-			// 		isopened: false,
-			// 		deeplink: data.senddata.notification.actions.open.content,
-			// 	});
-			// 	newdata.save();
-			// }
-
-			if (data.role === "doctor") {
-				let newdata = new appnotification({
-					appointmentid: JSON.parse(
-						data.senddata.notification.actions.open.content
-					).appointmentId,
-					doctorid: data.doctorid,
-					date: moment().format("YYYY-MM-DD"),
-					time: moment().format("HH:mm"),
-					title: data.senddata.notification.android.title,
-					description: data.senddata.notification.alert,
-					kind:
-						data.senddata.notification.android.title ===
-						"Consultation Confirmed"
-							? "consultation"
-							: "treatment",
-					isopened: false,
-					deeplink: data.senddata.notification.actions.open.content,
-				});
-				newdata.save();
-			}
-			if (data.role === "patient") {
-				let newdata = new appnotification({
-					appointmentid: JSON.parse(
-						data.senddata.notification.actions.open.content
-					).appointmentId,
-					patientid: data.patientid,
-					date: moment().format("YYYY-MM-DD"),
-					time: moment().format("HH:mm"),
-					title: data.senddata.notification.android.title,
-					description: data.senddata.notification.alert,
-					kind:
-						data.senddata.notification.android.title ===
-						"Consultation Confirmed"
-							? "consultation"
-							: "treatment",
-					isopened: false,
-					deeplink: data.senddata.notification.actions.open.content,
-				});
-				newdata.save();
-			}
-
 			return result.data;
 		})
 		.catch(function (error) {
-			console.log("Error...", error);
+			console.log("Error...", error.response.data);
 		});
 };
 
@@ -1897,10 +1497,9 @@ app.post("/CreateToken", (req, res) => {
 		if (req.body.params.isadmin === "patient") {
 			url = `/resources/accessTokens?userId=${externalUserId}&ttlInSecs=${ttlInSecs}&levelName=${process.env.PATIENTLEVELNAME}`;
 		}
-		if (req.body.params.isadmin === true) {
+		if (req.body.params.isadmin) {
 			url = `/resources/accessTokens?userId=${externalUserId}&ttlInSecs=${ttlInSecs}&levelName=${process.env.ADMINLEVELNAME}`;
-		}
-		if (req.body.params.isadmin === false) {
+		} else {
 			url = `/resources/accessTokens?userId=${externalUserId}&ttlInSecs=${ttlInSecs}&levelName=${process.env.DOCTORLEVELNAME}`;
 		}
 
@@ -1927,13 +1526,9 @@ app.post("/CreateToken", (req, res) => {
 
 		var externalUserId = body;
 		var levelName;
-		if (req.body.params.isadmin === "patient") {
-			levelName = process.env.PATIENTLEVELNAME;
-		}
-		if (req.body.params.isadmin === true) {
+		if (req.body.params.isadmin) {
 			levelName = process.env.ADMINLEVELNAME;
-		}
-		if (req.body.params.isadmin === false) {
+		} else {
 			levelName = process.env.DOCTORLEVELNAME;
 		}
 
@@ -2032,400 +1627,6 @@ app.post("/GetSumsubDocuments", (req, res) => {
 	}
 
 	main();
-});
-
-setInterval(() => {
-	const SUMSUB_APP_TOKEN = process.env.SUMSUB_APPTOKEN;
-	const SUMSUB_SECRET_KEY = process.env.SUMSUB_SECRET_KEY;
-	const SUMSUB_BASE_URL = process.env.SUMSUB_URL;
-	// console.log("req.body.userid", req.body.userid);
-	var config = {};
-	config.baseURL = SUMSUB_BASE_URL;
-
-	function createSignature(config) {
-		// console.log("Creating a signature for the request...");
-
-		var ts = Math.floor(Date.now() / 1000);
-		const signature = crypto.createHmac("sha256", SUMSUB_SECRET_KEY);
-		signature.update(ts + config.method.toUpperCase() + config.url);
-
-		if (config.data instanceof FormData) {
-			signature.update(config.data.getBuffer());
-		} else if (config.data) {
-			signature.update(config.data);
-		}
-
-		config.headers["X-App-Access-Ts"] = ts;
-		config.headers["X-App-Access-Sig"] = signature.digest("hex");
-
-		return config;
-	}
-
-	function getApplicantStatus(applicantId) {
-		// console.log("Getting the applicant status...");
-
-		var method = "get";
-		var url = `/resources/applicants/-;externalUserId=${applicantId}/one`;
-
-		var headers = {
-			Accept: "application/json",
-			"X-App-Token": SUMSUB_APP_TOKEN,
-		};
-
-		config.method = method;
-		config.url = url;
-		config.headers = headers;
-		config.data = null;
-
-		return config;
-	}
-
-	UserModel.find(
-		{
-			$or: [{ sumsubstatus: "" }, { sumsubstatus: "error" }],
-			currentstep: "6",
-		},
-		function (error, data) {
-			// console.log("data", data);
-			data.forEach((doc) => {
-				async function main() {
-					axios.interceptors.request.use(createSignature, function (error) {
-						return Promise.reject(error);
-					});
-
-					// console.log("doc._id.toString()", doc._id.toString());
-
-					await axios(getApplicantStatus(doc._id.toString()))
-						.then(function (response) {
-							// console.log("Response:\n", JSON.stringify(response.data));
-							// res.send(JSON.stringify(response.data.requiredIdDocs));
-							// return response;
-
-							if (
-								response.data.review.reviewStatus === "completed" &&
-								response.data.review.reviewResult.reviewAnswer === "GREEN"
-							) {
-								UserModel.updateOne(
-									{ _id: response.data.externalUserId },
-									{ $set: { sumsubstatus: "accepted" } },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-										}
-									}
-								);
-								UserModel.findOne(
-									{ _id: response.data.externalUserId },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-											if (result !== null) {
-												email.sendEmail({ type: "accepted", user: result });
-												if (result.channelid !== "") {
-													let data = returnNotificationData(
-														result.channelid.split("|"),
-														"ID verification",
-														"All checks complete and approved",
-														"doctor",
-														"KYC"
-													);
-													SendNotification(data);
-												}
-											}
-										}
-									}
-								);
-							}
-							if (
-								response.data.review.reviewStatus === "completed" &&
-								response.data.review.reviewResult.reviewAnswer === "RED"
-							) {
-								UserModel.updateOne(
-									{ _id: response.data.externalUserId },
-									{ $set: { sumsubstatus: "error" } },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-										}
-									}
-								);
-								UserModel.findOne(
-									{ _id: response.data.externalUserId },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-											if (result !== null) {
-												email.sendEmail({ type: "error", user: result });
-												if (result.channelid !== "") {
-													let data = returnNotificationData(
-														result.channelid.split("|"),
-														"ID verification",
-														"Something is not right, please try again ",
-														"doctor",
-														"KYC"
-													);
-													SendNotification(data);
-												}
-											}
-										}
-									}
-								);
-							}
-						})
-						.catch(function (error) {
-							console.log("Error:\n", error.response);
-						});
-					return;
-				}
-
-				main();
-			});
-		}
-	);
-
-	patient.find(
-		{
-			$or: [{ sumsubstatus: "Pending" }, { sumsubstatus: "Error" }],
-		},
-		function (error, data) {
-			// console.log("data", data);
-			data.forEach((doc) => {
-				async function main() {
-					axios.interceptors.request.use(createSignature, function (error) {
-						return Promise.reject(error);
-					});
-
-					// console.log("doc._id.toString()", doc._id.toString());
-
-					await axios(getApplicantStatus(doc._id.toString()))
-						.then(function (response) {
-							// console.log("Response:\n", JSON.stringify(response.data));
-							// res.send(JSON.stringify(response.data.requiredIdDocs));
-							// return response;
-
-							if (
-								response.data.review.reviewStatus === "completed" &&
-								response.data.review.reviewResult.reviewAnswer === "GREEN"
-							) {
-								patient.updateOne(
-									{ _id: response.data.externalUserId },
-									{ $set: { sumsubstatus: "Approved" } },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-										}
-									}
-								);
-								patient.findOne(
-									{ _id: response.data.externalUserId },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-											if (result !== null) {
-												email.sendEmail({
-													type: "accepted",
-													user: result,
-													role: "patient",
-												});
-												if (result.channelid !== "") {
-													let data = returnNotificationData(
-														result.channelid.split("|"),
-														"ID verification",
-														"All checks complete and approved",
-														"patient",
-														"KYC"
-													);
-													SendNotification(data);
-												}
-											}
-										}
-									}
-								);
-							}
-							if (
-								response.data.review.reviewStatus === "completed" &&
-								response.data.review.reviewResult.reviewAnswer === "RED"
-							) {
-								patient.updateOne(
-									{ _id: response.data.externalUserId },
-									{ $set: { sumsubstatus: "Error" } },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-										}
-									}
-								);
-								patient.findOne(
-									{ _id: response.data.externalUserId },
-									function (err, result) {
-										if (err) {
-											console.log(err);
-										} else {
-											// console.log(result);
-											if (result !== null) {
-												email.sendEmail({
-													type: "error",
-													user: result,
-													role: "patient",
-												});
-												if (result.channelid !== "") {
-													let data = returnNotificationData(
-														result.channelid.split("|"),
-														"ID verification",
-														"Something is not right, please try again ",
-														"patient",
-														"KYC"
-													);
-													SendNotification(data);
-												}
-											}
-										}
-									}
-								);
-							}
-						})
-						.catch(function (error) {
-							console.log("Error:\n", error.response);
-						});
-					return;
-				}
-				main();
-			});
-		}
-	);
-	// 24 hrs - 86400000
-	// 12 hrs - 43200000
-	// 3 hrs  - 10800000
-	// 1 hr   - 3600000
-	// 30 min - 1800000
-	// 1 min - 60
-}, 60000);
-
-app.get("/popular", (req, res) => {
-	// appointment.find({}, function (error, data) {
-	// 	data.forEach((app) => {
-	// 		console.log("app.id", app._id);
-	// 	});
-	// });
-	appointment.aggregate(
-		[
-			// {
-			// 	$lookup: {
-			// 		from: "user_settings",
-			// 		localField: "doctorid",
-			// 		foreignField: "userid",
-			// 		as: "settings",
-			// 	},
-			// },
-			{ $addFields: { doctorid: { $toObjectId: "$doctorid" } } },
-			{
-				$lookup: {
-					from: "aesthetik_users", // collection to join
-					localField: "doctorid", //field from the input documents
-					foreignField: "_id", //field from the documents of the "from" collection
-					as: "doctor_details", // output array field
-				},
-			},
-			// { $addFields: { patientid: { $toObjectId: "$patientid" } } },
-			// {
-			// 	$lookup: {
-			// 		from: "patient_users",
-			// 		localField: "patientid",
-			// 		foreignField: "_id",
-			// 		as: "patient_details",
-			// 	},
-			// },
-		],
-		function (error, data) {
-			const doctorids = new Set();
-			const clinicname = new Set();
-			const treatments = new Set();
-			data.forEach((ele) => {
-				if (doctorids.has(ele._id.toString())) {
-					ele.idpopular = ele.popular + 1;
-				} else {
-					doctorids.add(ele._id.toString());
-					ele.idpopular = 1;
-				}
-				if (clinicname.has(ele.doctor_details[0].clinicname)) {
-					ele.clinicpopular = ele.popular + 1;
-				} else {
-					clinicname.add(ele.doctor_details[0].clinicname);
-					ele.clinicpopular = 1;
-				}
-				ele.treatmentid.forEach((tid) => {
-					if (treatments.has(tid)) {
-						ele.treatmentpopular = ele.popular + 1;
-					} else {
-						treatments.add(ele._id.toString());
-						ele.treatmentpopular = 1;
-					}
-				});
-			});
-			console.log("doctorids", doctorids);
-			console.log("data", data);
-			return res.send(data);
-			//console.log(res.json(data));
-			//handle error case also
-		}
-	);
-});
-
-app.post("/doctorlocations", (req, res) => {
-	TreatmentsModel.findOne(
-		{ _id: req.body.treatmentid },
-		function (err, result) {
-			if (err) {
-				console.log("err", err);
-			}
-			if (result) {
-				// console.log("result", result);
-				let doctorids = result.assigneddoctors[0].split(",");
-				for (var i = 0; i < doctorids.length; i++) {
-					doctorids.splice(i + 1, 1);
-				}
-				// console.log("doctorids", doctorids);
-				var doctors = [];
-				doctorids.forEach((doctor) => {
-					UserModel.findOne({ _id: doctor }, function (err, result) {
-						if (err) {
-							console.log(err);
-						} else {
-							console.log("result", result.business[0].location[0]);
-							if (result.business[0] !== null) {
-								let obj = {
-									id: doctor,
-									location: result.business[0].location[0].line2,
-									image: result.avatar,
-									firstname: result.firstName,
-									lastname: result.lastName,
-								};
-								doctors.push(obj);
-							}
-						}
-						if (doctor === doctorids[doctorids.length - 1]) {
-							// console.log("doctors", doctors);
-							res.send(doctors);
-						}
-					});
-				});
-			}
-		}
-	);
 });
 
 app.get("/message", (req, res) => {
@@ -2625,82 +1826,6 @@ app.post("/patientfiles", (req, res) => {
 	});
 });
 
-app.get("/getOne/:pid/:did", (req, res) => {
-	const currentTime = moment().valueOf();
-	const videoDateTime3hr = (appointment) => {
-		return appointment.videodatetime
-			? moment(appointment.videodatetime, "YYYY-MM-DD HH:mm:ss")
-					.add(3, "hours")
-					.valueOf()
-			: 0;
-	};
-	const treatmentDateTime = (appointment) => {
-		return moment(
-			JSON.stringify(appointment.appointmentdate).split("T")[0] +
-				" " +
-				appointment.starttime,
-			"YYYY-MM-DD HH:mm"
-		).valueOf();
-	};
-	appointment.aggregate(
-		[
-			{
-				$match: {
-					doctorid: req.params.did,
-					patientid: req.params.pid,
-				},
-			},
-			{
-				$lookup: {
-					from: "user_settings",
-					localField: "doctorid",
-					foreignField: "userid",
-					as: "settings",
-				},
-			},
-			{ $addFields: { doctorid: { $toObjectId: "$doctorid" } } },
-			{
-				$lookup: {
-					from: "aesthetik_users", // collection to join
-					localField: "doctorid", //field from the input documents
-					foreignField: "_id", //field from the documents of the "from" collection
-					as: "doctor_details", // output array field
-				},
-			},
-			{ $addFields: { patientid: { $toObjectId: "$patientid" } } },
-			{
-				$lookup: {
-					from: "patient_users",
-					localField: "patientid",
-					foreignField: "_id",
-					as: "patient_details",
-				},
-			},
-		],
-		function (error, data) {
-			var entered = false;
-
-			data.forEach((app) => {
-				if (
-					entered === false &&
-					app.iscompleted !== "true" &&
-					((app.complete !== "true" && app.ispaymentdone === false) ||
-						(app.complete === "true" && currentTime < videoDateTime3hr(app))) &&
-					currentTime < treatmentDateTime(app)
-				) {
-					// sample.push(app);
-					// console.log("app", app);
-					entered = true;
-					return res.send(app);
-				}
-			});
-
-			//console.log(res.json(data));
-			//handle error case also
-		}
-	);
-});
-
 app.get("/getAll/:pid/:did", (req, res) => {
 	if (req.params.pid !== "undefined" && req.params.did !== "undefined") {
 		appointment.aggregate(
@@ -2770,15 +1895,6 @@ app.get("/getAll/:pid/:did", (req, res) => {
 						as: "patient_details",
 					},
 				},
-				{ $addFields: { appointmentid: { $toObjectId: "$appointmentid" } } },
-				{
-					$lookup: {
-						from: "patientpayments",
-						localField: "_id",
-						foreignField: "appointmentid",
-						as: "patient_payments",
-					},
-				},
 			],
 			function (error, data) {
 				//console.log(res.json(data));
@@ -2800,285 +1916,6 @@ app.get("/getAll/:pid/:did", (req, res) => {
 						localField: "doctorid",
 						foreignField: "userid",
 						as: "settings",
-					},
-				},
-				{ $addFields: { doctorid: { $toObjectId: "$doctorid" } } },
-				{
-					$lookup: {
-						from: "aesthetik_users", // collection to join
-						localField: "doctorid", //field from the input documents
-						foreignField: "_id", //field from the documents of the "from" collection
-						as: "doctor_details", // output array field
-					},
-				},
-				{ $addFields: { patientid: { $toObjectId: "$patientid" } } },
-				{
-					$lookup: {
-						from: "patient_users",
-						localField: "patientid",
-						foreignField: "_id",
-						as: "patient_details",
-					},
-				},
-			],
-			function (error, data) {
-				return res.send(data);
-				//console.log(res.json(data));
-				//handle error case also
-			}
-		);
-	}
-});
-
-app.post("/getDoctorsWithLocation", (req, res) => {
-	console.log("req", req.body.location);
-	// UserModel.find({
-	// 	business: [{ location: [{ towncity: "Los Angeles" }] }],
-	// }).then((result) => {
-	// 	console.log("result", result);
-	// 	res.send(result);
-	// });
-	UserModel.aggregate(
-		[
-			{
-				$match: {
-					"business.location.towncity": req.body.location,
-				},
-			},
-		],
-		function (error, data) {
-			data.forEach((e) => {
-				console.log("id", e._id.toString());
-				appointment.aggregate(
-					[
-						{
-							$match: {
-								doctorid: e._id.toString(),
-							},
-						},
-					],
-					function (err, result) {
-						console.log("result", result.length);
-						e.popular = result.length;
-						if (e._id === data[data.length - 1]._id) {
-							// console.log("data", data);
-							return res.send(data);
-						}
-					}
-				);
-			});
-
-			//console.log(res.json(data));
-			//handle error case also
-		}
-	);
-
-	// UserModel.aggregate([{
-	// 	"business.location.towncity": "Los Angeles",
-	// ]}).then((result) => {
-	// 	const doctorids = new Set();
-	// 	result.forEach((ele) => {
-	// 		if (doctorids.has(ele._id.toString())) {
-	// 			ele.popular = ele.popular + 1;
-	// 		} else {
-	// 			doctorids.add(ele._id.toString());
-	// 			ele.popular = 1;
-	// 		}
-	// 	});
-	// 	console.log("result", result);
-	// 	res.send(result);
-	// });
-});
-
-app.post("/getClinicsWithLocation", (req, res) => {
-	// console.log("req", req.body.location);
-
-	UserModel.aggregate(
-		[
-			{
-				$match: {
-					isadmin: true,
-					"business.location.towncity": req.body.location,
-				},
-			},
-		],
-		function (error, data) {
-			data.forEach((e) => {
-				console.log("id", e._id.toString());
-				var x = 0;
-				UserModel.aggregate(
-					[
-						{
-							$match: {
-								clinicname: e.clinicname,
-							},
-						},
-					],
-					function (err, el) {
-						el.forEach((ele) => {
-							appointment.aggregate(
-								[
-									{
-										$match: {
-											doctorid: ele._id.toString(),
-										},
-									},
-								],
-								function (err, result) {
-									console.log("result", result);
-									x = x + result.length;
-									// console.log("x", x);
-									// console.log("result", result.length);
-									if (
-										e._id === data[data.length - 1]._id &&
-										ele._id === el[el.length - 1]._id
-									) {
-										e.popular = x;
-										// console.log("final", x);
-										// console.log("data", data);
-										return res.send(data);
-									}
-								}
-							);
-						});
-					}
-				);
-			});
-
-			//console.log(res.json(data));
-			//handle error case also
-		}
-	);
-
-	// UserModel.find({
-	// 	isadmin: true,
-	// 	"business.location.towncity": req.body.location,
-	// }).then((data) => {
-	// 	data.forEach((e) => {
-	// 		console.log("id", e._id.toString());
-	// 		var x = 0;
-	// 		UserModel.find({
-	// 			clinicname: e.clinicname,
-	// 		}).then((el) => {
-	// 			el.forEach((ele) => {
-	// 				appointment.aggregate(
-	// 					[
-	// 						{
-	// 							$match: {
-	// 								doctorid: ele._id.toString(),
-	// 							},
-	// 						},
-	// 					],
-	// 					function (err, result) {
-	// 						console.log("result", result);
-	// 						x = x + result.length;
-	// 						console.log("x", x);
-	// 						console.log("result", result.length);
-	// 						if (
-	// 							e._id === data[data.length - 1]._id &&
-	// 							ele._id === el[el.length - 1]
-	// 						) {
-	// 							e.popular = x;
-	// 							console.log("x", x);
-	// 							// console.log("data", data);
-	// 							return res.send(data);
-	// 						}
-	// 					}
-	// 				);
-	// 			});
-	// 		});
-	// 	});
-	// console.log("result", result);
-	// res.send(result);
-	// });
-});
-
-app.post("/getTreatmentsWithLocation", (req, res) => {
-	// console.log("req", req.body.location);
-	appointment.find({}, function (error, data) {
-		// console.log("data", data);
-		UserModel.aggregate(
-			[
-				{
-					$match: {
-						"business.location.towncity": req.body.location,
-					},
-				},
-			],
-			function (error, result) {
-				// console.log("result", result);
-				TreatmentsModel.aggregate(
-					[
-						{
-							$match: { photo1: { $nin: [""] } },
-						},
-					],
-					function (err, re) {
-						// console.log("res", re);
-						var final = [];
-
-						result.forEach((ele) => {
-							var count = 1;
-
-							re.forEach((el) => {
-								if (el.assigneddoctors[0].includes(ele._id.toString())) {
-									// data.forEach((result1) => {
-									// 	if (
-									// 		el.treatmentid[0].includes(ele._id.toString()) &&
-									// 		ele.assigneddoctors[0].includes(result1._id.toString())
-									// 	) {
-									data.forEach((da) => {
-										if (da.treatmentid[0].includes(el._id.toString())) {
-											count++;
-											// console.log("count", el._id.toString());
-											el.popular = count;
-											final.push(el);
-										}
-									});
-									// count++;
-									// 	}
-									// });
-								}
-							});
-						});
-						// re.forEach((ele) => {
-						// 	data.forEach((el) => {
-						// 		result.forEach((result1) => {
-						// 			if (
-						// 				el.treatmentid[0].includes(ele._id.toString()) &&
-						// 				ele.assigneddoctors[0].includes(result1._id.toString())
-						// 			) {
-						// 				// data.forEach((da) => {
-						// 				// 	if (da.treatmentid[0].includes(ele._id.toString())) {
-						// 				// 		count++;
-						// 				// 	}
-						// 				// });
-						// 				count++;
-						// 			}
-						// 		});
-						// 	});
-						// 	ele.popular = count;
-						// 	final.push(ele);
-						// });
-						// console.log("final", final);
-						var k = [...new Set(final)];
-						// console.log("k", k);
-						res.send(k);
-					}
-				);
-				// res.send(result);
-			}
-		);
-	});
-});
-
-app.get("/getAppointmentWithDetails/:aid", (req, res) => {
-	if (req.params.aid !== "undefined") {
-		appointment.aggregate(
-			[
-				{
-					$match: {
-						_id: mongoose.Types.ObjectId(req.params.aid),
 					},
 				},
 				{ $addFields: { doctorid: { $toObjectId: "$doctorid" } } },
