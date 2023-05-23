@@ -24,6 +24,8 @@ const PatienthistoryType = new GraphQLObjectType({
 		sign1: { type: GraphQLString },
 		sign2: { type: GraphQLString },
 		answers: { type: GraphQLString },
+		updateddate: { type: GraphQLString },
+		createdddate: { type: GraphQLString },
 	},
 });
 
@@ -73,6 +75,8 @@ const mutationType = new GraphQLObjectType({
 				sign1: { type: GraphQLString },
 				sign2: { type: GraphQLString },
 				answers: { type: GraphQLString },
+				updateddate: { type: GraphQLString },
+				createdddate: { type: GraphQLString },
 			},
 			resolve: (root, args, context, info) => {
 				var patienthistory = new PatienthistoryModel(args);

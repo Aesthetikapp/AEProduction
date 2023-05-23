@@ -6,6 +6,8 @@ const patienthistoryschema = new Schema({
 	sign1: String,
 	sign2: String,
 	answers: String,
+	updateddate: String,
+	createdddate: String,
 });
 
 module.exports = mongoose.model("patienthistory", patienthistoryschema);

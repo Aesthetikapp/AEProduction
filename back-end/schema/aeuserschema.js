@@ -98,7 +98,7 @@ const UserType = new GraphQLObjectType({
 		email: { type: GraphQLString },
 		firstName: { type: GraphQLString },
 		lastName: { type: GraphQLString },
-		title: { type: GraphQLString },
+		sumsubstatus: { type: GraphQLString },
 		primaryTelephone: { type: GraphQLString },
 		countryCode: { type: GraphQLString },
 		clinicname: { type: GraphQLString },
@@ -110,17 +110,17 @@ const UserType = new GraphQLObjectType({
 		bio1: { type: GraphQLString },
 		channelid: { type: GraphQLString },
 		verification: { type: new GraphQLList(verification) },
-		payment: { type: GraphQLString },
+		stripeaccount: { type: GraphQLString },
 		plan: { type: GraphQLString },
 		source: { type: GraphQLString },
 		isadmin: { type: GraphQLBoolean },
 		complete: { type: GraphQLString },
-		step: { type: GraphQLString },
+		loginthrough: { type: GraphQLString },
 		currentstep: { type: GraphQLString },
-		prevstep: { type: GraphQLString },
+		entered: { type: GraphQLString },
 		createdate: { type: GraphQLDate },
 		updatedate: { type: GraphQLDate },
-		createuser: { type: GraphQLString },
+		stripestatus: { type: GraphQLString },
 		updateuser: { type: GraphQLString },
 		password: { type: GraphQLString },
 	},
@@ -356,7 +356,7 @@ const mutationType = new GraphQLObjectType({
 				email: { type: GraphQLString },
 				firstName: { type: GraphQLString },
 				lastName: { type: GraphQLString },
-				title: { type: GraphQLString },
+				sumsubstatus: { type: GraphQLString },
 				primaryTelephone: { type: GraphQLString },
 				countryCode: { type: GraphQLString },
 				clinicname: { type: GraphQLString },
@@ -368,17 +368,17 @@ const mutationType = new GraphQLObjectType({
 				bio1: { type: GraphQLString },
 				channelid: { type: GraphQLString },
 				verification: { type: inputverification },
-				payment: { type: GraphQLString },
+				stripeaccount: { type: GraphQLString },
 				plan: { type: GraphQLString },
 				source: { type: GraphQLString },
 				isadmin: { type: GraphQLBoolean },
 				complete: { type: GraphQLString },
-				step: { type: GraphQLString },
+				loginthrough: { type: GraphQLString },
 				currentstep: { type: GraphQLString },
-				prevstep: { type: GraphQLString },
+				entered: { type: GraphQLString },
 				createdate: { type: GraphQLDate },
 				updatedate: { type: GraphQLDate },
-				createuser: { type: GraphQLString },
+				stripestatus: { type: GraphQLString },
 				updateuser: { type: GraphQLString },
 				password: { type: GraphQLString },
 			},
@@ -416,81 +416,7 @@ const mutationType = new GraphQLObjectType({
 					}
 					user.save();
 					return user;
-					//utils.iterate(user["_doc"])
-
-					//utils.iterate(user);
-					//console.log(user["_doc"]);
-					//console.log(keys.length);					rs
-					// for (var k = 0; k <= keys.length - 1; k++) {
-					// 	//console.log(keys[k] + "...." )
-					// 	if (typeof (user[keys[k]]) === "object") {
-					// 		if (keys[k] !== "_id") {
-					// 			if (user[keys[k]] instanceof Date) {
-					// 				if (obj.hasOwnProperty(keys[k])) {
-					// 					user[keys[k]] = obj[keys[k]];
-					// 				}
-					// 				else {
-					// 					user[keys[k]] = user[keys[k]];
-					// 				}
-					// 			}
-					// 			else {
-					// 				//console.log(keys[k]);
-					// 				const keys1 = Object.keys(user[keys[k]][0]["_doc"]);
-					// 				//console.log(keys1.length);
-					// 				for (var j = 0; j <= keys1.length - 1; j++) {
-					// 					//console.log(user[keys[k]][0]["_doc"][keys1[j]]);
-					// 					if (typeof (user[keys[k]][0]["_doc"][keys1[j]]) === "object") {
-					// 						if (keys1[j] !== "_id") {
-					// 							//console.log(keys1[j])
-					// 							if (user[keys[k]][0]["_doc"][keys1[j]][0]) {
-					// 								if (user[keys[k]][0]["_doc"][keys1[j]][0]["_doc"]) {
-					// 									const keys2 = Object.keys(user[keys[k]][0]["_doc"][keys1[j]][0]["_doc"]);
-					// 									for (var i = 0; i <= keys2.length - 1; i++) {
-					// 										if (obj[keys[k]][0][keys1[j]][0][keys2[i]]) {
-					// 											user[keys[k]][0]["_doc"][keys1[j]][0]["_doc"][keys2[i]] = obj[keys[k]][0][keys1[j]][0][keys2[i]]
-					// 										}
-					// 										else {
-					// 											user[keys[k]][0]["_doc"][keys1[j]][0]["_doc"][keys2[i]] = user[keys[k]][0]["_doc"][keys1[j]][0]["_doc"][keys2[i]];
-					// 										}
-					// 									}
-					// 								} else {
-					// 									console.log("a..." + keys1[j] + "...a" + user[keys[k]][0]["_doc"][keys1[j]])
-					// 								}
-
-					// 							}
-					// 							else {
-					// 								console.log(keys1[j] + ",,,,")
-					// 							}
-					// 						}
-					// 					}
-					// 					else {
-
-					// 						if (obj[keys[k]][0].hasOwnProperty(keys1[j])) {
-					// 							user[keys[k]][0]["_doc"][keys1[j]] = obj[keys[k]][0][keys1[j]];
-					// 						}
-					// 						else {
-					// 							user[keys[k]][0]["_doc"][keys1[j]] = "";
-					// 						}
-					// 					}
-					// 				}
-					// 			}
-					// 		}
-					// 	}
-					// 	else {
-					// 		if (obj.hasOwnProperty(keys[k])) {
-					// 			user[keys[k]] = obj[keys[k]];
-					// 		}
-					// 		else {
-					// 			user[keys[k]] = user[keys[k]];
-					// 		}
-					// 	}
-					// }
-					//user.markModified("business")
-					//user.markModified("location")
-					//user.save();
 				});
-				//console.log(user.save());
-				//user.save()
 			},
 		},
 	},
